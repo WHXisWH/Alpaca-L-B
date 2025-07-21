@@ -1,0 +1,9 @@
+{
+  "mockNFT": "AS13ueTp717XtY2iRapZVD6D5ZRjS8hkHsFT62aZBV7W2jQofU8q",
+  "governance": "AS1aemdwYMe83VwWk68Gm8JsDrLmDJYbXbxTZB32YoULgGgeh6fj",
+  "oracle": "AS1qRg34RgbYDRLp1Av9gMUBiDGkeKQ3iuz1DB7iUc3Ykhxf2y8Q",
+  "collateralVault": "AS12uBVXhJHuc834wEYAgo6ifN2U6r6NPY7dRhTtw5fxAP3hQVjZT",
+  "riskManager": "AS12Undbqkhug28huvreYktnkjFF9tAdmKJ97NUDaEMUTx3UW6K9H",
+  "lendingPool": "AS12P3o8pWYwHyPyUZd67hXB6wfywrGYExVovKQw6mTBuWnaAB4xj",
+  "liquidationEngine": "AS1BN3zhFepUkthAerwmhoaaNgNkEW4BCdwmivZCe1gQqQuGbU2o"
+}

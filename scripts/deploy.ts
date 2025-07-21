@@ -23,11 +23,19 @@ async function main() {
   
   const addresses: Record<string, string> = {};
   
+  let nftContract: SmartContract;
+  let governanceContract: SmartContract;
+  let oracleContract: SmartContract;
+  let vaultContract: SmartContract;
+  let riskManagerContract: SmartContract;
+  let lendingPoolContract: SmartContract;
+  let liquidationContract: SmartContract;
+  
   console.log('\nStep 1: Deploying MockNFT contract...');
   const nftBytecode = readFileSync('./build/MockNFT.wasm');
   
   try {
-    const nftContract = await SmartContract.deploy(
+    nftContract = await SmartContract.deploy(
       provider,
       nftBytecode,
       new Uint8Array(0),
@@ -48,7 +56,7 @@ async function main() {
   const governanceBytecode = readFileSync('./build/Governance.wasm');
   
   try {
-    const governanceContract = await SmartContract.deploy(
+    governanceContract = await SmartContract.deploy(
       provider,
       governanceBytecode,
       new Uint8Array(0),
@@ -69,7 +77,7 @@ async function main() {
   const oracleBytecode = readFileSync('./build/Oracle.wasm');
   
   try {
-    const oracleContract = await SmartContract.deploy(
+    oracleContract = await SmartContract.deploy(
       provider,
       oracleBytecode,
       new Uint8Array(0),
@@ -94,7 +102,7 @@ async function main() {
       .addString(addresses.governance)
       .addString(addresses.mockNFT);
     
-    const vaultContract = await SmartContract.deploy(
+    vaultContract = await SmartContract.deploy(
       provider,
       vaultBytecode,
       vaultConstructorArgs.serialize(),
@@ -121,7 +129,7 @@ async function main() {
       .addString(addresses.collateralVault)
       .addString('PLACEHOLDER_LIQUIDATION');
     
-    const riskManagerContract = await SmartContract.deploy(
+    riskManagerContract = await SmartContract.deploy(
       provider,
       riskManagerBytecode,
       riskConstructorArgs.serialize(),
@@ -147,7 +155,7 @@ async function main() {
       .addString(addresses.riskManager)
       .addString(addresses.collateralVault);
     
-    const lendingPoolContract = await SmartContract.deploy(
+    lendingPoolContract = await SmartContract.deploy(
       provider,
       lendingPoolBytecode,
       poolConstructorArgs.serialize(),
@@ -174,7 +182,7 @@ async function main() {
       .addString(addresses.riskManager)
       .addString(addresses.collateralVault);
     
-    const liquidationContract = await SmartContract.deploy(
+    liquidationContract = await SmartContract.deploy(
       provider,
       liquidationBytecode,
       liquidationConstructorArgs.serialize(),
@@ -235,15 +243,23 @@ async function main() {
     throw error;
   }
   
-  writeFileSync(
-    resolve(process.cwd(), 'addresses.json'),
-    JSON.stringify(addresses, null, 2)
-  );
-  
-  writeFileSync(
-    resolve(process.cwd(), 'front-end/public/addresses.json'),
-    JSON.stringify(addresses, null, 2)
-  );
+  try {
+    writeFileSync(
+      resolve(process.cwd(), 'addresses.json'),
+      JSON.stringify(addresses, null, 2)
+    );
+    
+    try {
+      writeFileSync(
+        resolve(process.cwd(), 'front-end/public/addresses.json'),
+        JSON.stringify(addresses, null, 2)
+      );
+    } catch (frontendError) {
+      console.log('Note: front-end directory not found, skipping frontend addresses.json');
+    }
+  } catch (error) {
+    console.error('Failed to write addresses file:', error);
+  }
   
   console.log('\n✅ Deployment complete!');
   console.log('\nContract addresses saved to addresses.json:');
