@@ -1,0 +1,22 @@
+{
+    "targets": {
+      "release": {
+        "sourceMap": true,
+        "optimizeLevel": 3,
+        "shrinkLevel": 3,
+        "converge": true,
+        "noAssert": false,
+        "exportRuntime": true,
+        "bindings": false
+      }
+    },
+    "entries": [
+      "assembly/contracts/CollateralVault.ts",
+      "assembly/contracts/LendingPool.ts",
+      "assembly/contracts/RiskManager.ts",
+      "assembly/contracts/LiquidationEngine.ts",
+      "assembly/contracts/Oracle.ts",
+      "assembly/contracts/Governance.ts",
+      "assembly/contracts/MockNFT.ts"
+    ]
+  }

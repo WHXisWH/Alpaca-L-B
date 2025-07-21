@@ -1,0 +1,175 @@
+import { generateEvent, Storage, Context, Address } from '@massalabs/massa-as-sdk';
+import { stringToBytes, bytesToString, u64ToBytes, bytesToU64, Args } from '@massalabs/as-types';
+
+const GOVERNANCE_KEY = stringToBytes('GOVERNANCE');
+const NFT_CONTRACT_KEY = stringToBytes('NFT_CONTRACT');
+const DEPOSITED_NFT_PREFIX = 'DEPOSITED_';
+const NFT_OWNER_PREFIX = 'NFT_OWNER_';
+const NFT_VALUE_PREFIX = 'NFT_VALUE_';
+const NFT_PD_PREFIX = 'NFT_PD_';
+const NFT_LGD_PREFIX = 'NFT_LGD_';
+const SHARE_TOKEN_PREFIX = 'SHARE_';
+const TOTAL_SHARES_KEY = stringToBytes('TOTAL_SHARES');
+
+export function constructor(argsData: StaticArray<u8>): void {
+  assert(Context.isDeployingContract(), "Constructor can only be called during deployment");
+  
+  const args = new Args(argsData);
+  const governanceAddress = args.nextString().unwrap();
+  const nftContractAddress = args.nextString().unwrap();
+  
+  Storage.set(GOVERNANCE_KEY, stringToBytes(governanceAddress));
+  Storage.set(NFT_CONTRACT_KEY, stringToBytes(nftContractAddress));
+  Storage.set(TOTAL_SHARES_KEY, u64ToBytes(0));
+  
+  generateEvent('CollateralVault deployed');
+}
+
+export function depositNFT(argsData: StaticArray<u8>): StaticArray<u8> {
+  const governanceAddress = new Address(bytesToString(Storage.get(GOVERNANCE_KEY)));
+  const pausedKey = stringToBytes('PAUSED');
+  assert(!Storage.hasOf(governanceAddress, pausedKey), "System is paused");
+  
+  const tokenId = bytesToU64(argsData);
+  const caller = Context.caller().toString();
+  const nftContract = new Address(bytesToString(Storage.get(NFT_CONTRACT_KEY)));
+  
+  const ownerResult = Storage.getOf(nftContract, stringToBytes('OWNER_' + tokenId.toString()));
+  const owner = bytesToString(ownerResult);
+  assert(owner == caller, "Not NFT owner");
+  
+  const depositedKey = stringToBytes(DEPOSITED_NFT_PREFIX + tokenId.toString());
+  assert(!Storage.has(depositedKey), "NFT already deposited");
+  
+  const valueResult = Storage.getOf(nftContract, stringToBytes('VALUE_' + tokenId.toString()));
+  const pdResult = Storage.getOf(nftContract, stringToBytes('PD_' + tokenId.toString()));
+  const lgdResult = Storage.getOf(nftContract, stringToBytes('LGD_' + tokenId.toString()));
+  
+  const value = bytesToU64(valueResult);
+  const pd = bytesToU64(pdResult);
+  const lgd = bytesToU64(lgdResult);
+  
+  assert(value > 0, "Invalid NFT value");
+  
+  Storage.set(depositedKey, stringToBytes('true'));
+  Storage.set(stringToBytes(NFT_OWNER_PREFIX + tokenId.toString()), stringToBytes(caller));
+  Storage.set(stringToBytes(NFT_VALUE_PREFIX + tokenId.toString()), u64ToBytes(value));
+  Storage.set(stringToBytes(NFT_PD_PREFIX + tokenId.toString()), u64ToBytes(pd));
+  Storage.set(stringToBytes(NFT_LGD_PREFIX + tokenId.toString()), u64ToBytes(lgd));
+  
+  const shares = value;
+  const totalShares = bytesToU64(Storage.get(TOTAL_SHARES_KEY));
+  
+  Storage.set(stringToBytes(SHARE_TOKEN_PREFIX + caller + '_' + tokenId.toString()), u64ToBytes(shares));
+  Storage.set(TOTAL_SHARES_KEY, u64ToBytes(totalShares + shares));
+  
+  generateEvent('NFT deposited');
+  
+  return u64ToBytes(shares);
+}
+
+export function withdrawNFT(argsData: StaticArray<u8>): void {
+  const governanceAddress = new Address(bytesToString(Storage.get(GOVERNANCE_KEY)));
+  const pausedKey = stringToBytes('PAUSED');
+  assert(!Storage.hasOf(governanceAddress, pausedKey), "System is paused");
+  
+  const tokenId = bytesToU64(argsData);
+  const caller = Context.caller().toString();
+  
+  const ownerKey = stringToBytes(NFT_OWNER_PREFIX + tokenId.toString());
+  assert(Storage.has(ownerKey), "NFT not found in vault");
+  
+  const owner = bytesToString(Storage.get(ownerKey));
+  assert(owner == caller, "Not NFT owner");
+  
+  const depositedKey = stringToBytes(DEPOSITED_NFT_PREFIX + tokenId.toString());
+  assert(Storage.has(depositedKey), "NFT not deposited");
+  
+  const shareKey = stringToBytes(SHARE_TOKEN_PREFIX + caller + '_' + tokenId.toString());
+  const shares = bytesToU64(Storage.get(shareKey));
+  const totalShares = bytesToU64(Storage.get(TOTAL_SHARES_KEY));
+  
+  Storage.del(depositedKey);
+  Storage.del(ownerKey);
+  Storage.del(stringToBytes(NFT_VALUE_PREFIX + tokenId.toString()));
+  Storage.del(stringToBytes(NFT_PD_PREFIX + tokenId.toString()));
+  Storage.del(stringToBytes(NFT_LGD_PREFIX + tokenId.toString()));
+  Storage.del(shareKey);
+  
+  Storage.set(TOTAL_SHARES_KEY, u64ToBytes(totalShares - shares));
+  
+  generateEvent('NFT withdrawn');
+}
+
+export function getNFTValue(argsData: StaticArray<u8>): StaticArray<u8> {
+  const tokenId = bytesToU64(argsData);
+  const valueKey = stringToBytes(NFT_VALUE_PREFIX + tokenId.toString());
+  
+  if (!Storage.has(valueKey)) {
+    return u64ToBytes(0);
+  }
+  
+  return Storage.get(valueKey);
+}
+
+export function getNFTPD(argsData: StaticArray<u8>): StaticArray<u8> {
+  const tokenId = bytesToU64(argsData);
+  const pdKey = stringToBytes(NFT_PD_PREFIX + tokenId.toString());
+  
+  if (!Storage.has(pdKey)) {
+    return u64ToBytes(0);
+  }
+  
+  return Storage.get(pdKey);
+}
+
+export function getNFTLGD(argsData: StaticArray<u8>): StaticArray<u8> {
+  const tokenId = bytesToU64(argsData);
+  const lgdKey = stringToBytes(NFT_LGD_PREFIX + tokenId.toString());
+  
+  if (!Storage.has(lgdKey)) {
+    return u64ToBytes(0);
+  }
+  
+  return Storage.get(lgdKey);
+}
+
+export function isNFTDeposited(argsData: StaticArray<u8>): StaticArray<u8> {
+  const tokenId = bytesToU64(argsData);
+  const depositedKey = stringToBytes(DEPOSITED_NFT_PREFIX + tokenId.toString());
+  
+  if (Storage.has(depositedKey)) {
+    return stringToBytes('true');
+  } else {
+    return stringToBytes('false');
+  }
+}
+
+export function getNFTOwner(argsData: StaticArray<u8>): StaticArray<u8> {
+  const tokenId = bytesToU64(argsData);
+  const ownerKey = stringToBytes(NFT_OWNER_PREFIX + tokenId.toString());
+  
+  if (!Storage.has(ownerKey)) {
+    return stringToBytes('');
+  }
+  
+  return Storage.get(ownerKey);
+}
+
+export function getUserShares(argsData: StaticArray<u8>): StaticArray<u8> {
+  const args = new Args(argsData);
+  const user = args.nextString().unwrap();
+  const tokenId = args.nextU64().unwrap();
+  
+  const shareKey = stringToBytes(SHARE_TOKEN_PREFIX + user + '_' + tokenId.toString());
+  
+  if (!Storage.has(shareKey)) {
+    return u64ToBytes(0);
+  }
+  
+  return Storage.get(shareKey);
+}
+
+export function getTotalShares(_: StaticArray<u8>): StaticArray<u8> {
+  return Storage.get(TOTAL_SHARES_KEY);
+}

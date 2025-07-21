@@ -1,0 +1,10 @@
+export const INTEREST_ACCRUAL_INTERVAL: u64 = 32;
+export const RISK_EVALUATION_INTERVAL: u64 = 64;
+export const BASE_INTEREST_RATE: u64 = 500;
+export const INTEREST_RATE_SLOPE: u64 = 2000;
+export const BASIS_POINTS: u64 = 10000;
+export const MIN_BORROW_AMOUNT: u64 = 1000000000;
+export const DEFAULT_LTV: u64 = 7000;
+export const MAX_LTV: u64 = 8500;
+export const MIN_LTV: u64 = 5000;
+export const LIQUIDATION_PENALTY: u64 = 500;
