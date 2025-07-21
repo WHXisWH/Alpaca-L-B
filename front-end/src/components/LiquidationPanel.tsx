@@ -47,6 +47,33 @@ export default function LiquidationPanel({ provider, addresses }: LiquidationPan
     return () => clearInterval(interval);
   }, [contracts.liquidationEngine]);
 
+  const safeParseString = (result: any, fieldName: string, defaultValue: string = ''): string => {
+    try {
+      if (!result || !result.value || result.value.length === 0) {
+        console.log(`${fieldName}: No data, using default`);
+        return defaultValue;
+      }
+      return new massa.Args(result.value).nextString();
+    } catch (error) {
+      console.log(`${fieldName}: Parse error, using default`, error);
+      return defaultValue;
+    }
+  };
+
+  const safeParseU64 = (result: any, fieldName: string, defaultValue: string = '0'): string => {
+    try {
+      if (!result || !result.value || result.value.length === 0) {
+        console.log(`${fieldName}: No data, using default`);
+        return defaultValue;
+      }
+      const value = new massa.Args(result.value).nextU64();
+      return value.toString();
+    } catch (error) {
+      console.log(`${fieldName}: Parse error, using default`, error);
+      return defaultValue;
+    }
+  };
+
   const refreshData = async () => {
     if (!contracts.liquidationEngine) {
       setIsLoading(false);
@@ -55,7 +82,7 @@ export default function LiquidationPanel({ provider, addresses }: LiquidationPan
 
     try {
       const activeAuctionsResult = await contracts.liquidationEngine.read('getActiveAuctions');
-      const activeAuctionIds = new massa.Args(activeAuctionsResult.value).nextString();
+      const activeAuctionIds = safeParseString(activeAuctionsResult, 'activeAuctions', '');
       
       const auctions: Auction[] = [];
       if (activeAuctionIds && activeAuctionIds !== '') {
@@ -69,7 +96,7 @@ export default function LiquidationPanel({ provider, addresses }: LiquidationPan
               'getAuction', 
               new massa.Args().addU64(BigInt(auctionId)).serialize()
             );
-            const auctionData = new massa.Args(auctionResult.value).nextString();
+            const auctionData = safeParseString(auctionResult, `auction_${auctionId}`, '');
             
             if (auctionData && auctionData !== '') {
               const parts = auctionData.split(':');
@@ -93,7 +120,7 @@ export default function LiquidationPanel({ provider, addresses }: LiquidationPan
       }
       
       const totalLiquidationsResult = await contracts.liquidationEngine.read('getTotalLiquidations');
-      const totalLiquidations = new massa.Args(totalLiquidationsResult.value).nextU64();
+      const totalLiquidations = safeParseU64(totalLiquidationsResult, 'totalLiquidations', '0');
       
       const liquidations: Liquidation[] = [];
       const maxToFetch = Math.min(Number(totalLiquidations), 10);
@@ -104,7 +131,7 @@ export default function LiquidationPanel({ provider, addresses }: LiquidationPan
             'getLiquidation',
             new massa.Args().addU64(BigInt(i)).serialize()
           );
-          const liquidationData = new massa.Args(liquidationResult.value).nextString();
+          const liquidationData = safeParseString(liquidationResult, `liquidation_${i}`, '');
           
           if (liquidationData && liquidationData !== '') {
             const parts = liquidationData.split(':');

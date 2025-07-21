@@ -40,6 +40,47 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
     return () => clearInterval(interval);
   }, [contracts.oracle, contracts.riskManager]);
 
+  const safeParseU64 = (result: any, fieldName: string, defaultValue: string = '0'): string => {
+    try {
+      if (!result || !result.value || result.value.length === 0) {
+        console.log(`${fieldName}: No data, using default`);
+        return defaultValue;
+      }
+      const value = new massa.Args(result.value).nextU64();
+      return value.toString();
+    } catch (error) {
+      console.log(`${fieldName}: Parse error, using default`, error);
+      return defaultValue;
+    }
+  };
+
+  const safeParseString = (result: any, fieldName: string, defaultValue: string = ''): string => {
+    try {
+      if (!result || !result.value || result.value.length === 0) {
+        console.log(`${fieldName}: No data, using default`);
+        return defaultValue;
+      }
+      return new massa.Args(result.value).nextString();
+    } catch (error) {
+      console.log(`${fieldName}: Parse error, using default`, error);
+      return defaultValue;
+    }
+  };
+
+  const safeParseBoolean = (result: any, fieldName: string, defaultValue: boolean = false): boolean => {
+    try {
+      if (!result || !result.value || result.value.length === 0) {
+        console.log(`${fieldName}: No data, using default`);
+        return defaultValue;
+      }
+      const value = new massa.Args(result.value).nextString();
+      return value === 'true';
+    } catch (error) {
+      console.log(`${fieldName}: Parse error, using default`, error);
+      return defaultValue;
+    }
+  };
+
   const refreshData = async () => {
     if (!contracts.oracle || !contracts.riskManager) {
       setRiskData(prev => ({ ...prev, isLoading: false }));
@@ -63,18 +104,18 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
         contracts.riskManager.read('getHighRiskPositions')
       ]);
 
-      const currentPrice = new massa.Args(priceResult.value).nextU64();
-      const twapPrice = new massa.Args(twapResult.value).nextU64();
-      const volatility = new massa.Args(volatilityResult.value).nextU64();
-      const lastUpdate = new massa.Args(lastUpdateResult.value).nextU64();
-      const evaluationActive = new massa.Args(evaluationActiveResult.value).nextString() === 'true';
-      const highRiskPositions = new massa.Args(highRiskResult.value).nextString();
+      const currentPrice = safeParseU64(priceResult, 'currentPrice', '1000000');
+      const twapPrice = safeParseU64(twapResult, 'twapPrice', '1000000');
+      const volatility = safeParseU64(volatilityResult, 'volatility', '100');
+      const lastUpdate = safeParseU64(lastUpdateResult, 'lastUpdate', '0');
+      const evaluationActive = safeParseBoolean(evaluationActiveResult, 'evaluationActive', false);
+      const highRiskPositions = safeParseString(highRiskResult, 'highRiskPositions', '');
 
       setRiskData({
-        currentPrice: currentPrice.toString(),
-        twapPrice: twapPrice.toString(),
-        volatility: volatility.toString(),
-        lastUpdate: lastUpdate.toString(),
+        currentPrice,
+        twapPrice,
+        volatility,
+        lastUpdate,
         evaluationActive,
         highRiskPositions,
         isLoading: false
@@ -98,24 +139,29 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
     return {
       backgroundColor: 'transparent',
       grid: {
-        top: 40,
-        left: 60,
-        right: 40,
-        bottom: 60
+        top: 50,
+        left: 80,
+        right: 50,
+        bottom: 80
       },
       xAxis: {
         type: 'category',
         data: priceHistory.map(item => item.time),
-        axisLine: { lineStyle: { color: '#666' } },
-        axisLabel: { color: '#999', fontSize: 10 }
+        axisLine: { lineStyle: { color: '#8B7355' } },
+        axisLabel: { 
+          color: '#8B7355', 
+          fontSize: 11,
+          rotate: 45,
+          margin: 15
+        }
       },
       yAxis: {
         type: 'value',
         name: 'Price ($)',
-        nameTextStyle: { color: '#999' },
-        axisLine: { lineStyle: { color: '#666' } },
-        axisLabel: { color: '#999' },
-        splitLine: { lineStyle: { color: '#333' } }
+        nameTextStyle: { color: '#8B7355' },
+        axisLine: { lineStyle: { color: '#8B7355' } },
+        axisLabel: { color: '#8B7355' },
+        splitLine: { lineStyle: { color: '#F5F5DC' } }
       },
       series: [
         {
@@ -123,15 +169,15 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
           type: 'line',
           data: priceHistory.map(item => item.price),
           smooth: true,
-          lineStyle: { color: '#00ff88', width: 2 },
-          itemStyle: { color: '#00ff88' },
+          lineStyle: { color: '#90EE90', width: 2 },
+          itemStyle: { color: '#90EE90' },
           areaStyle: {
             color: {
               type: 'linear',
               x: 0, y: 0, x2: 0, y2: 1,
               colorStops: [
-                { offset: 0, color: 'rgba(0, 255, 136, 0.3)' },
-                { offset: 1, color: 'rgba(0, 255, 136, 0.05)' }
+                { offset: 0, color: 'rgba(144, 238, 144, 0.3)' },
+                { offset: 1, color: 'rgba(144, 238, 144, 0.05)' }
               ]
             }
           }
@@ -140,14 +186,14 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
           name: 'TWAP',
           type: 'line',
           data: priceHistory.map(() => Number(riskData.twapPrice) / 1_000_000),
-          lineStyle: { color: '#ff6b00', width: 2, type: 'dashed' },
-          itemStyle: { color: '#ff6b00' }
+          lineStyle: { color: '#DAA520', width: 2, type: 'dashed' },
+          itemStyle: { color: '#DAA520' }
         }
       ],
       tooltip: {
         trigger: 'axis',
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
-        borderColor: '#333',
+        backgroundColor: 'rgba(139, 115, 85, 0.9)',
+        borderColor: '#8B7355',
         textStyle: { color: '#fff' },
         formatter: function(params: any) {
           let result = `Time: ${params[0].axisValue}<br/>`;
@@ -159,15 +205,15 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
       },
       legend: {
         data: ['Current Price', 'TWAP'],
-        textStyle: { color: '#999' },
+        textStyle: { color: '#8B7355' },
         top: 10
       }
     };
   };
 
   const volatilityLevel = Number(riskData.volatility);
-  const volatilityColor = volatilityLevel < 50 ? '#00ff88' : 
-                         volatilityLevel < 200 ? '#ffaa00' : '#ff4444';
+  const volatilityColor = volatilityLevel < 50 ? '#90EE90' : 
+                         volatilityLevel < 200 ? '#DAA520' : '#CD853F';
   
   const priceDiff = Number(riskData.currentPrice) - Number(riskData.twapPrice);
   const priceDiffPercent = Number(riskData.twapPrice) > 0 ? (priceDiff / Number(riskData.twapPrice)) * 100 : 0;
@@ -208,7 +254,7 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
           <div className="stat-value">
             {riskData.evaluationActive ? 
               <span style={{ color: 'var(--success)' }}>Active</span> :
-              <span style={{ color: 'var(--error)' }}>Inactive</span>
+              <span style={{ color: 'var(--warning)' }}>Inactive</span>
             }
           </div>
           <div className="stat-change">
@@ -240,12 +286,12 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
         </div>
       </div>
 
-      <div className="chart-container">
+      <div className="chart-container" style={{ height: '450px' }}>
         <h3 style={{ marginBottom: '20px', color: 'var(--text)' }}>Price Monitoring</h3>
         {priceHistory.length > 0 ? (
           <ReactECharts 
             option={getChartOption()} 
-            style={{ height: '100%', width: '100%' }}
+            style={{ height: '380px', width: '100%' }}
             theme="dark"
           />
         ) : (
@@ -253,7 +299,7 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
             display: 'flex', 
             alignItems: 'center', 
             justifyContent: 'center', 
-            height: '300px',
+            height: '350px',
             color: 'var(--text-secondary)'
           }}>
             Waiting for price data...
