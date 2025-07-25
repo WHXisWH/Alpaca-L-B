@@ -53,6 +53,7 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
       const userAddress = provider.address;
       const positions: Position[] = [];
       const collaterals: NFTCollateral[] = [];
+      const textDecoder = new TextDecoder();
 
       for (let i = 1; i <= 50; i++) {
         try {
@@ -60,7 +61,7 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
             'getPosition', 
             new massa.Args().addU64(BigInt(i)).serialize()
           );
-          const positionData = new massa.Args(positionResult.value).nextString();
+          const positionData = textDecoder.decode(positionResult.value);
 
           if (positionData && positionData !== '') {
             const parts = positionData.split(':');
@@ -81,20 +82,20 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
         }
       }
 
-      for (let i = 1; i <= 20; i++) {
+      for (let i = 1; i <= 50; i++) {
         try {
           const isDepositedResult = await contracts.collateralVault.read(
             'isNFTDeposited', 
             new massa.Args().addU64(BigInt(i)).serialize()
           );
-          const isDeposited = new massa.Args(isDepositedResult.value).nextString() === 'true';
+          const isDeposited = textDecoder.decode(isDepositedResult.value) === 'true';
 
           if (isDeposited) {
             const ownerResult = await contracts.collateralVault.read(
               'getNFTOwner', 
               new massa.Args().addU64(BigInt(i)).serialize()
             );
-            const owner = new massa.Args(ownerResult.value).nextString();
+            const owner = textDecoder.decode(ownerResult.value);
 
             if (owner === userAddress) {
               const [valueResult, pdResult, lgdResult] = await Promise.all([
@@ -141,14 +142,13 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
 
   useEffect(() => {
     refreshData();
-    
     const interval = setInterval(refreshData, REFRESH_INTERVALS.NORMAL);
     return () => clearInterval(interval);
   }, [refreshData]);
 
-  const mintNFT = useCallback(async (value: string, pd: string, lgd: string): Promise<void> => {
+  const mintNFT = useCallback(async (value: string, pd: string, lgd: string): Promise<bigint> => {
     if (!contracts.mockNFT || !provider) throw new Error('MockNFT contract not available');
-
+  
     const maturity = Math.floor(Date.now() / 1000) + 365 * 24 * 3600;
     
     const operation = await contracts.mockNFT.call(
@@ -161,9 +161,16 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
         .addU64(BigInt(maturity))
         .serialize()
     );
-
+  
     await operation.waitFinalExecution();
+
+    const nextIdResult = await contracts.mockNFT.read('getNextTokenId');
+    const nextId = new massa.Args(nextIdResult.value).nextU64();
+    const mintedId = nextId - BigInt(1);
+
     await refreshData();
+    return mintedId;
+
   }, [contracts.mockNFT, provider, refreshData]);
 
   const depositNFT = useCallback(async (tokenId: number): Promise<void> => {
@@ -193,7 +200,7 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
   const borrow = useCallback(async (tokenId: number, amount: string): Promise<void> => {
     if (!contracts.lendingPool) throw new Error('Lending pool contract not available');
 
-    const borrowAmount = BigInt(Math.floor(parseFloat(amount) * 1_000_000));
+    const borrowAmount = BigInt(Math.floor(parseFloat(amount) * 1_000_000_000));
     
     const operation = await contracts.lendingPool.call(
       'borrow',

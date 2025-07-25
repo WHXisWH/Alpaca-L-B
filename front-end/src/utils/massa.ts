@@ -37,7 +37,7 @@ export function formatAddress(address: string): string {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
-export function formatAmount(amount: bigint | string, decimals: number = 6): string {
+export function formatAmount(amount: bigint | string, decimals: number = 9): string {
   const value = typeof amount === 'string' ? BigInt(amount) : amount;
   const divisor = BigInt(10 ** decimals);
   const whole = value / divisor;
@@ -53,7 +53,7 @@ export function formatAmount(amount: bigint | string, decimals: number = 6): str
   return `${whole}.${trimmed}`;
 }
 
-export function parseAmount(amount: string, decimals: number = 6): bigint {
+export function parseAmount(amount: string, decimals: number = 9): bigint {
   const [whole, decimal = ''] = amount.split('.');
   const paddedDecimal = decimal.padEnd(decimals, '0').slice(0, decimals);
   return BigInt(whole + paddedDecimal);
@@ -61,7 +61,7 @@ export function parseAmount(amount: string, decimals: number = 6): bigint {
 
 export function formatMAS(amount: bigint | string): string {
   const value = typeof amount === 'string' ? BigInt(amount) : amount;
-  return formatAmount(value, 6);
+  return formatAmount(value, 9);
 }
 
 export function formatPercentage(value: number, decimals: number = 2): string {

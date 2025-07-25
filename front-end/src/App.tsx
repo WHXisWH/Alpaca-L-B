@@ -265,7 +265,7 @@ function App() {
               <div className="alpaca-icon">
                   <img src="/alpaca-icon.png" alt="Alpaca" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
-              Alpaca LB
+              Alpaca Bridge
             </div>
             <div className="wallet-info">
               {state.isConnected && (
@@ -290,6 +290,36 @@ function App() {
           </nav>
         </div>
       </header>
+
+      {!state.isConnected && (
+        <div className="quick-guide">
+          <div className="container">
+            <h2>🚀 Quick Start Guide</h2>
+            <div className="guide-steps">
+              <div className="guide-step">
+                <span className="step-number">1</span>
+                <h3>Connect Wallet</h3>
+                <p>Connect your Massa wallet to start using Alpaca Bridge</p>
+              </div>
+              <div className="guide-step">
+                <span className="step-number">2</span>
+                <h3>Deposit or Mint NFT</h3>
+                <p>Deposit MAS to earn interest or mint RWA NFT as collateral</p>
+              </div>
+              <div className="guide-step">
+                <span className="step-number">3</span>
+                <h3>Borrow Against RWA</h3>
+                <p>Use your NFT collateral to borrow MAS with dynamic LTV</p>
+              </div>
+              <div className="guide-step">
+                <span className="step-number">4</span>
+                <h3>Autonomous Management</h3>
+                <p>ASC automatically manages interest accrual and risk assessment</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <main>
         {!state.isConnected ? (
@@ -369,7 +399,7 @@ function App() {
         <div className="container">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
             <span style={{ fontSize: '20px' }}>🦙</span>
-            <p>&copy; 2024 Alpaca LB. Built on Massa blockchain with Autonomous Smart Contracts.</p>
+            <p>&copy; 2024 Alpaca Bridge. Built on Massa blockchain with Autonomous Smart Contracts.</p>
               <img src="/alpaca-small.png" alt="Alpaca" style={{ width: '24px', height: '24px' }} />
           </div>
           

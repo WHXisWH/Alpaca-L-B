@@ -1,4 +1,4 @@
-export const PRECISION = 1_000_000;
+export const PRECISION = 1_000_000_000;
 export const BASIS_POINTS = 10_000;
 
 export const RISK_LEVELS = {

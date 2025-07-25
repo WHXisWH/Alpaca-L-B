@@ -35,48 +35,33 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
 
   useEffect(() => {
     refreshData();
-    
     const interval = setInterval(refreshData, REFRESH_INTERVALS.FAST);
     return () => clearInterval(interval);
   }, [contracts.oracle, contracts.riskManager]);
 
-  const safeParseU64 = (result: any, fieldName: string, defaultValue: string = '0'): string => {
+  const safeParseU64 = (result: any, defaultValue: string = '0'): string => {
     try {
-      if (!result || !result.value || result.value.length === 0) {
-        console.log(`${fieldName}: No data, using default`);
-        return defaultValue;
-      }
-      const value = new massa.Args(result.value).nextU64();
-      return value.toString();
+      if (!result || !result.value || result.value.length === 0) return defaultValue;
+      return new massa.Args(result.value).nextU64().toString();
     } catch (error) {
-      console.log(`${fieldName}: Parse error, using default`, error);
       return defaultValue;
     }
   };
 
-  const safeParseString = (result: any, fieldName: string, defaultValue: string = ''): string => {
+  const safeParseString = (result: any, defaultValue: string = ''): string => {
     try {
-      if (!result || !result.value || result.value.length === 0) {
-        console.log(`${fieldName}: No data, using default`);
-        return defaultValue;
-      }
-      return new massa.Args(result.value).nextString();
+      if (!result || !result.value || result.value.length === 0) return defaultValue;
+      return new TextDecoder().decode(result.value);
     } catch (error) {
-      console.log(`${fieldName}: Parse error, using default`, error);
       return defaultValue;
     }
   };
 
-  const safeParseBoolean = (result: any, fieldName: string, defaultValue: boolean = false): boolean => {
+  const safeParseBoolean = (result: any, defaultValue: boolean = false): boolean => {
     try {
-      if (!result || !result.value || result.value.length === 0) {
-        console.log(`${fieldName}: No data, using default`);
-        return defaultValue;
-      }
-      const value = new massa.Args(result.value).nextString();
-      return value === 'true';
+      if (!result || !result.value || result.value.length === 0) return defaultValue;
+      return new TextDecoder().decode(result.value) === 'true';
     } catch (error) {
-      console.log(`${fieldName}: Parse error, using default`, error);
       return defaultValue;
     }
   };
@@ -104,12 +89,12 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
         contracts.riskManager.read('getHighRiskPositions')
       ]);
 
-      const currentPrice = safeParseU64(priceResult, 'currentPrice', '1000000');
-      const twapPrice = safeParseU64(twapResult, 'twapPrice', '1000000');
-      const volatility = safeParseU64(volatilityResult, 'volatility', '100');
-      const lastUpdate = safeParseU64(lastUpdateResult, 'lastUpdate', '0');
-      const evaluationActive = safeParseBoolean(evaluationActiveResult, 'evaluationActive', false);
-      const highRiskPositions = safeParseString(highRiskResult, 'highRiskPositions', '');
+      const currentPrice = safeParseU64(priceResult, '1000000');
+      const twapPrice = safeParseU64(twapResult, '1000000');
+      const volatility = safeParseU64(volatilityResult, '100');
+      const lastUpdate = safeParseU64(lastUpdateResult, '0');
+      const evaluationActive = safeParseBoolean(evaluationActiveResult, false);
+      const highRiskPositions = safeParseString(highRiskResult, '');
 
       setRiskData({
         currentPrice,
@@ -138,22 +123,12 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
   const getChartOption = () => {
     return {
       backgroundColor: 'transparent',
-      grid: {
-        top: 50,
-        left: 80,
-        right: 50,
-        bottom: 80
-      },
+      grid: { top: 50, left: 80, right: 50, bottom: 80 },
       xAxis: {
         type: 'category',
         data: priceHistory.map(item => item.time),
         axisLine: { lineStyle: { color: '#8B7355' } },
-        axisLabel: { 
-          color: '#8B7355', 
-          fontSize: 11,
-          rotate: 45,
-          margin: 15
-        }
+        axisLabel: { color: '#8B7355', fontSize: 11, rotate: 45, margin: 15 }
       },
       yAxis: {
         type: 'value',
@@ -165,16 +140,10 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
       },
       series: [
         {
-          name: 'Current Price',
-          type: 'line',
-          data: priceHistory.map(item => item.price),
-          smooth: true,
-          lineStyle: { color: '#90EE90', width: 2 },
-          itemStyle: { color: '#90EE90' },
+          name: 'Current Price', type: 'line', data: priceHistory.map(item => item.price),
+          smooth: true, lineStyle: { color: '#90EE90', width: 2 }, itemStyle: { color: '#90EE90' },
           areaStyle: {
-            color: {
-              type: 'linear',
-              x: 0, y: 0, x2: 0, y2: 1,
+            color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1,
               colorStops: [
                 { offset: 0, color: 'rgba(144, 238, 144, 0.3)' },
                 { offset: 1, color: 'rgba(144, 238, 144, 0.05)' }
@@ -183,17 +152,12 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
           }
         },
         {
-          name: 'TWAP',
-          type: 'line',
-          data: priceHistory.map(() => Number(riskData.twapPrice) / 1_000_000),
-          lineStyle: { color: '#DAA520', width: 2, type: 'dashed' },
-          itemStyle: { color: '#DAA520' }
+          name: 'TWAP', type: 'line', data: priceHistory.map(() => Number(riskData.twapPrice) / 1_000_000),
+          lineStyle: { color: '#DAA520', width: 2, type: 'dashed' }, itemStyle: { color: '#DAA520' }
         }
       ],
       tooltip: {
-        trigger: 'axis',
-        backgroundColor: 'rgba(139, 115, 85, 0.9)',
-        borderColor: '#8B7355',
+        trigger: 'axis', backgroundColor: 'rgba(139, 115, 85, 0.9)', borderColor: '#8B7355',
         textStyle: { color: '#fff' },
         formatter: function(params: any) {
           let result = `Time: ${params[0].axisValue}<br/>`;
@@ -203,25 +167,18 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
           return result;
         }
       },
-      legend: {
-        data: ['Current Price', 'TWAP'],
-        textStyle: { color: '#8B7355' },
-        top: 10
-      }
+      legend: { data: ['Current Price', 'TWAP'], textStyle: { color: '#8B7355' }, top: 10 }
     };
   };
 
   const volatilityLevel = Number(riskData.volatility);
-  const volatilityColor = volatilityLevel < 50 ? '#90EE90' : 
-                         volatilityLevel < 200 ? '#DAA520' : '#CD853F';
-  
+  const volatilityColor = volatilityLevel < 50 ? '#90EE90' : volatilityLevel < 200 ? '#DAA520' : '#CD853F';
   const priceDiff = Number(riskData.currentPrice) - Number(riskData.twapPrice);
   const priceDiffPercent = Number(riskData.twapPrice) > 0 ? (priceDiff / Number(riskData.twapPrice)) * 100 : 0;
 
   return (
     <div className="section">
       <div className="section-title">⚡ Risk Monitoring Dashboard</div>
-      
       <div className="card-grid">
         <div className="stat-card">
           <div className="stat-label">Current Price</div>
@@ -230,25 +187,18 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
             {priceDiffPercent >= 0 ? '↗' : '↘'} {Math.abs(priceDiffPercent).toFixed(2)}% vs TWAP
           </div>
         </div>
-
         <div className="stat-card">
           <div className="stat-label">TWAP Price</div>
           <div className="stat-value">${(Number(riskData.twapPrice) / 1_000_000).toFixed(6)}</div>
-          <div className="stat-change">
-            Time-weighted average
-          </div>
+          <div className="stat-change">Time-weighted average</div>
         </div>
-
         <div className="stat-card">
           <div className="stat-label">Volatility</div>
           <div className="stat-value" style={{ color: volatilityColor }}>
             {(volatilityLevel / 10).toFixed(1)}%
           </div>
-          <div className="stat-change">
-            Price stability indicator
-          </div>
+          <div className="stat-change">Price stability indicator</div>
         </div>
-
         <div className="stat-card">
           <div className="stat-label">Risk Evaluation</div>
           <div className="stat-value">
@@ -257,35 +207,23 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
               <span style={{ color: 'var(--warning)' }}>Inactive</span>
             }
           </div>
-          <div className="stat-change">
-            ASC Status
-          </div>
+          <div className="stat-change">ASC Status</div>
         </div>
-
         <div className="stat-card">
           <div className="stat-label">High Risk Positions</div>
           <div className="stat-value">
             {riskData.highRiskPositions ? riskData.highRiskPositions.split(',').length : 0}
           </div>
-          <div className="stat-change">
-            Positions at risk
-          </div>
+          <div className="stat-change">Positions at risk</div>
         </div>
-
         <div className="stat-card">
           <div className="stat-label">Last Update</div>
           <div className="stat-value">
-            {Number(riskData.lastUpdate) > 0 ? 
-              new Date(Number(riskData.lastUpdate) * 1000).toLocaleTimeString() : 
-              'Never'
-            }
+            {Number(riskData.lastUpdate) > 0 ? new Date(Number(riskData.lastUpdate) * 1000).toLocaleTimeString() : 'Never'}
           </div>
-          <div className="stat-change">
-            Oracle timestamp
-          </div>
+          <div className="stat-change">Oracle timestamp</div>
         </div>
       </div>
-
       <div className="chart-container" style={{ height: '450px' }}>
         <h3 style={{ marginBottom: '20px', color: 'var(--text)' }}>Price Monitoring</h3>
         {priceHistory.length > 0 ? (
@@ -295,18 +233,11 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
             theme="dark"
           />
         ) : (
-          <div style={{ 
-            display: 'flex', 
-            alignItems: 'center', 
-            justifyContent: 'center', 
-            height: '350px',
-            color: 'var(--text-secondary)'
-          }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '350px', color: 'var(--text-secondary)'}}>
             Waiting for price data...
           </div>
         )}
       </div>
-
       <div className="card-grid" style={{ marginTop: '30px' }}>
         <div className="stat-card">
           <div className="section-title">🎯 Risk Assessment Model</div>
@@ -331,7 +262,6 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
             </div>
           </div>
         </div>
-
         <div className="stat-card">
           <div className="section-title">🔄 Autonomous Operations</div>
           <div style={{ fontSize: '14px', color: 'var(--text-secondary)', lineHeight: '1.6' }}>
@@ -354,7 +284,6 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
           </div>
         </div>
       </div>
-
       {riskData.highRiskPositions && (
         <div className="warning-message" style={{ marginTop: '20px' }}>
           ⚠️ Warning: {riskData.highRiskPositions.split(',').length} position(s) at high risk of liquidation.

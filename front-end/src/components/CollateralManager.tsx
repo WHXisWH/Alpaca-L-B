@@ -15,6 +15,7 @@ export default function CollateralManager({ positions, onSuccess }: CollateralMa
   const [withdrawTokenId, setWithdrawTokenId] = useState('');
   const [transactionState, setTransactionState] = useState(TRANSACTION_STATES.IDLE);
   const [error, setError] = useState('');
+  const [newlyMintedId, setNewlyMintedId] = useState<bigint | null>(null);
 
   const handleMintNFT = async () => {
     if (!validateAmount(nftValue) || !validateAmount(nftPD) || !validateAmount(nftLGD)) {
@@ -29,10 +30,12 @@ export default function CollateralManager({ positions, onSuccess }: CollateralMa
 
     setTransactionState(TRANSACTION_STATES.PENDING);
     setError('');
+    setNewlyMintedId(null);
 
     try {
-      const valueInNanoMAS = (parseFloat(nftValue) * 1_000_000).toString();
-      await positions.mintNFT(valueInNanoMAS, nftPD, nftLGD);
+      const valueInNanoMAS = (parseFloat(nftValue) * 1_000_000_000).toString();
+      const newId = await positions.mintNFT(valueInNanoMAS, nftPD, nftLGD);
+      setNewlyMintedId(newId);
       setTransactionState(TRANSACTION_STATES.SUCCESS);
       setNftValue('');
       setNftPD('');
@@ -41,7 +44,7 @@ export default function CollateralManager({ positions, onSuccess }: CollateralMa
       
       setTimeout(() => {
         setTransactionState(TRANSACTION_STATES.IDLE);
-      }, 3000);
+      }, 5000);
     } catch (err) {
       setError(getErrorMessage(err));
       setTransactionState(TRANSACTION_STATES.ERROR);
@@ -122,7 +125,8 @@ export default function CollateralManager({ positions, onSuccess }: CollateralMa
         
         {transactionState === TRANSACTION_STATES.SUCCESS && (
           <div className="success-message">
-            ✅ NFT minted successfully!
+            ✅ Transaction Successful!
+            {newlyMintedId !== null && ` Your new NFT ID is: ${newlyMintedId.toString()}`}
           </div>
         )}
 
