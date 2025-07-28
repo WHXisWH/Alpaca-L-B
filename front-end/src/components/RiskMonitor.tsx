@@ -59,16 +59,19 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
         }
       })()
 
-const safeParseBoolean = (r: any, d = false) =>
-  !r || !r.value || r.value.length === 0
-    ? d
-    : (() => {
+      const safeParseBoolean = (result: any, defaultValue: boolean = false): boolean => {
         try {
-          return new massa.Args(r.value).nextString().includes('true')
-        } catch {
-          return Buffer.from(r.value).toString().includes('true')
+          if (!result || !result.value || result.value.length === 0) {
+            return defaultValue;
+          }
+          
+          // 直接将字节数组转换为字符串
+          const str = new TextDecoder().decode(result.value);
+          return str === 'true' || str.includes('true');
+        } catch (error) {
+          return defaultValue;
         }
-      })()
+      };
 
 
   const refreshData = async () => {
