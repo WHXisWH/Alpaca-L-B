@@ -48,23 +48,28 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
     }
   };
 
-  const safeParseString = (result: any, defaultValue: string = ''): string => {
-    try {
-      if (!result || !result.value || result.value.length === 0) return defaultValue;
-      return new massa.Args(result.value).nextString();
-    } catch (error) {
-      return defaultValue;
-    }
-  };
+  const safeParseString = (r: any, d = '') =>
+  !r || !r.value || r.value.length === 0
+    ? d
+    : (() => {
+        try {
+          return new massa.Args(r.value).nextString()
+        } catch {
+          return Buffer.from(r.value).toString() || d
+        }
+      })()
 
-  const safeParseBoolean = (result: any, defaultValue: boolean = false): boolean => {
-    try {
-      if (!result || !result.value || result.value.length === 0) return defaultValue;
-      return new massa.Args(result.value).nextString() === 'true';
-    } catch (error) {
-      return defaultValue;
-    }
-  };
+const safeParseBoolean = (r: any, d = false) =>
+  !r || !r.value || r.value.length === 0
+    ? d
+    : (() => {
+        try {
+          return new massa.Args(r.value).nextString().includes('true')
+        } catch {
+          return Buffer.from(r.value).toString().includes('true')
+        }
+      })()
+
 
   const refreshData = async () => {
     if (!contracts.oracle || !contracts.riskManager) {
@@ -96,6 +101,9 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
       const evaluationActive = safeParseBoolean(evaluationActiveResult, false);
       const highRiskPositions = safeParseString(highRiskResult, '');
 
+      console.log('RAW EVAL BYTES', evaluationActiveResult.value)
+      console.log('PARSED FLAG', safeParseBoolean(evaluationActiveResult, false))
+      
       setRiskData({
         currentPrice,
         twapPrice,

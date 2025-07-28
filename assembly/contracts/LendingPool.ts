@@ -17,12 +17,12 @@ const ACCRUAL_ACTIVE_KEY = stringToBytes('ACCRUAL_ACTIVE');
 
 export function constructor(argsData: StaticArray<u8>): void {
   assert(Context.isDeployingContract(), "Constructor can only be called during deployment");
-  
+
   const args = new Args(argsData);
   const governanceAddress = args.nextString().unwrap();
   const riskManagerAddress = args.nextString().unwrap();
   const vaultAddress = args.nextString().unwrap();
-  
+
   Storage.set(GOVERNANCE_KEY, stringToBytes(governanceAddress));
   Storage.set(RISK_MANAGER_KEY, stringToBytes(riskManagerAddress));
   Storage.set(COLLATERAL_VAULT_KEY, stringToBytes(vaultAddress));
@@ -33,7 +33,7 @@ export function constructor(argsData: StaticArray<u8>): void {
   Storage.set(CURRENT_INTEREST_RATE_KEY, u64ToBytes(BASE_INTEREST_RATE));
   Storage.set(POSITION_COUNT_KEY, u64ToBytes(0));
   Storage.set(ACCRUAL_ACTIVE_KEY, stringToBytes('false'));
-  
+
   generateEvent('LendingPool deployed');
 }
 
@@ -41,9 +41,9 @@ export function startAccrual(_: StaticArray<u8>): void {
   const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
   const caller = Context.caller().toString();
   assert(caller == governanceAddress, "Only governance can start accrual");
-  
+
   Storage.set(ACCRUAL_ACTIVE_KEY, stringToBytes('true'));
-  
+
   const cur_period = Context.currentPeriod();
   const cur_thread = Context.currentThread();
   let next_thread: u8 = cur_thread + 1;
@@ -52,7 +52,7 @@ export function startAccrual(_: StaticArray<u8>): void {
     ++next_period;
     next_thread = 0;
   }
-  
+
   sendMessage(
     Context.callee(),
     'accrueInterest',
@@ -60,12 +60,12 @@ export function startAccrual(_: StaticArray<u8>): void {
     next_thread,
     next_period + 5,
     next_thread,
-    300_000,
+    200_000_000,
     0,
     0,
     []
   );
-  
+
   generateEvent('Interest accrual started');
 }
 
@@ -73,9 +73,9 @@ export function stopAccrual(_: StaticArray<u8>): void {
   const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
   const caller = Context.caller().toString();
   assert(caller == governanceAddress, "Only governance can stop accrual");
-  
+
   Storage.set(ACCRUAL_ACTIVE_KEY, stringToBytes('false'));
-  
+
   generateEvent('Interest accrual stopped');
 }
 
@@ -83,20 +83,20 @@ export function deposit(_: StaticArray<u8>): StaticArray<u8> {
   const governanceAddress = new Address(bytesToString(Storage.get(GOVERNANCE_KEY)));
   const pausedKey = stringToBytes('PAUSED');
   assert(!Storage.hasOf(governanceAddress, pausedKey), "System is paused");
-  
+
   const amount = transferredCoins();
   assert(amount > 0, "Invalid deposit amount");
-  
+
   const caller = Context.caller().toString();
   const userDepositKey = stringToBytes(USER_DEPOSITS_PREFIX + caller);
   const currentDeposit = Storage.has(userDepositKey) ? bytesToU64(Storage.get(userDepositKey)) : 0;
   const totalDeposits = bytesToU64(Storage.get(TOTAL_DEPOSITS_KEY));
-  
+
   Storage.set(userDepositKey, u64ToBytes(currentDeposit + amount));
   Storage.set(TOTAL_DEPOSITS_KEY, u64ToBytes(totalDeposits + amount));
-  
+
   generateEvent('Deposit completed');
-  
+
   return u64ToBytes(amount);
 }
 
@@ -104,26 +104,26 @@ export function withdraw(argsData: StaticArray<u8>): void {
   const governanceAddress = new Address(bytesToString(Storage.get(GOVERNANCE_KEY)));
   const pausedKey = stringToBytes('PAUSED');
   assert(!Storage.hasOf(governanceAddress, pausedKey), "System is paused");
-  
+
   const amount = bytesToU64(argsData);
   const caller = Context.caller().toString();
   const userDepositKey = stringToBytes(USER_DEPOSITS_PREFIX + caller);
-  
+
   assert(Storage.has(userDepositKey), "No deposits found");
-  
+
   const currentDeposit = bytesToU64(Storage.get(userDepositKey));
   assert(currentDeposit >= amount, "Insufficient balance");
-  
+
   const totalDeposits = bytesToU64(Storage.get(TOTAL_DEPOSITS_KEY));
   const totalBorrows = bytesToU64(Storage.get(TOTAL_BORROWS_KEY));
-  
+
   assert(totalDeposits - amount >= totalBorrows, "Insufficient liquidity");
-  
+
   Storage.set(userDepositKey, u64ToBytes(currentDeposit - amount));
   Storage.set(TOTAL_DEPOSITS_KEY, u64ToBytes(totalDeposits - amount));
-  
+
   transferCoins(new Address(caller), amount);
-  
+
   generateEvent('Withdrawal completed');
 }
 
@@ -131,39 +131,39 @@ export function borrow(argsData: StaticArray<u8>): StaticArray<u8> {
   const governanceAddress = new Address(bytesToString(Storage.get(GOVERNANCE_KEY)));
   const pausedKey = stringToBytes('PAUSED');
   assert(!Storage.hasOf(governanceAddress, pausedKey), "System is paused");
-  
+
   const args = new Args(argsData);
   const tokenId = args.nextU64().unwrap();
   const amount = args.nextU64().unwrap();
-  
+
   assert(amount >= MIN_BORROW_AMOUNT, "Amount below minimum");
-  
+
   const caller = Context.caller().toString();
   const vaultAddress = new Address(bytesToString(Storage.get(COLLATERAL_VAULT_KEY)));
   const riskManagerAddress = new Address(bytesToString(Storage.get(RISK_MANAGER_KEY)));
-  
+
   const isDepositedResult = Storage.getOf(vaultAddress, stringToBytes('DEPOSITED_' + tokenId.toString()));
   assert(bytesToString(isDepositedResult) == 'true', "NFT not deposited");
-  
+
   const ownerResult = Storage.getOf(vaultAddress, stringToBytes('NFT_OWNER_' + tokenId.toString()));
   assert(bytesToString(ownerResult) == caller, "Not NFT owner");
-  
+
   const positionCount = bytesToU64(Storage.get(POSITION_COUNT_KEY));
   const positionId = positionCount + 1;
-  
+
   const positionKey = stringToBytes(POSITION_PREFIX + positionId.toString());
   const positionData = caller + ':' + tokenId.toString() + ':' + amount.toString() + ':0:' + Context.timestamp().toString() + ':true';
   Storage.set(positionKey, stringToBytes(positionData));
-  
+
   Storage.set(POSITION_COUNT_KEY, u64ToBytes(positionId));
-  
+
   const totalBorrows = bytesToU64(Storage.get(TOTAL_BORROWS_KEY));
   Storage.set(TOTAL_BORROWS_KEY, u64ToBytes(totalBorrows + amount));
-  
+
   transferCoins(new Address(caller), amount);
-  
+
   generateEvent('Borrow completed');
-  
+
   return u64ToBytes(positionId);
 }
 
@@ -171,39 +171,39 @@ export function repay(argsData: StaticArray<u8>): void {
   const governanceAddress = new Address(bytesToString(Storage.get(GOVERNANCE_KEY)));
   const pausedKey = stringToBytes('PAUSED');
   assert(!Storage.hasOf(governanceAddress, pausedKey), "System is paused");
-  
+
   const positionId = bytesToU64(argsData);
   const repayAmount = transferredCoins();
-  
+
   const caller = Context.caller().toString();
   const positionKey = stringToBytes(POSITION_PREFIX + positionId.toString());
-  
+
   assert(Storage.has(positionKey), "Position not found");
-  
+
   const positionData = bytesToString(Storage.get(positionKey));
   const parts = positionData.split(':');
-  
+
   assert(parts.length >= 6, "Invalid position data");
   assert(parts[0] == caller, "Not position owner");
   assert(parts[5] == 'true', "Position not active");
-  
+
   const borrowedAmount = U64.parseInt(parts[2]);
   const accruedInterest = U64.parseInt(parts[3]);
   const totalDebt = borrowedAmount + accruedInterest;
-  
+
   assert(repayAmount >= totalDebt, "Insufficient repayment");
-  
+
   const tokenId = U64.parseInt(parts[1]);
-  
+
   Storage.set(positionKey, stringToBytes(parts[0] + ':' + parts[1] + ':0:0:' + parts[4] + ':false'));
-  
+
   const totalBorrows = bytesToU64(Storage.get(TOTAL_BORROWS_KEY));
   Storage.set(TOTAL_BORROWS_KEY, u64ToBytes(totalBorrows - borrowedAmount));
-  
+
   if (repayAmount > totalDebt) {
     transferCoins(new Address(caller), repayAmount - totalDebt);
   }
-  
+
   generateEvent('Repayment completed');
 }
 
@@ -212,20 +212,20 @@ export function accrueInterest(_: StaticArray<u8>): void {
   if (isActive != 'true') {
     return;
   }
-  
+
   const currentTime = Context.timestamp();
   const lastAccrual = bytesToU64(Storage.get(LAST_ACCRUAL_KEY));
   const timeElapsed = currentTime - lastAccrual;
-  
+
   const totalDeposits = bytesToU64(Storage.get(TOTAL_DEPOSITS_KEY));
   const totalBorrows = bytesToU64(Storage.get(TOTAL_BORROWS_KEY));
-  
+
   if (totalBorrows == 0) {
     Storage.set(LAST_ACCRUAL_KEY, u64ToBytes(currentTime));
-    
+
     const cur_period = Context.currentPeriod();
     const cur_thread = Context.currentThread();
-    
+
     const accrual_slots = INTEREST_ACCRUAL_INTERVAL;
     const accrual_periods_to_add = accrual_slots / 32;
     const accrual_thread_offset = accrual_slots % 32;
@@ -235,7 +235,7 @@ export function accrueInterest(_: StaticArray<u8>): void {
       next_period += 1;
       next_thread = next_thread - 32;
     }
-    
+
     sendMessage(
       Context.callee(),
       'accrueInterest',
@@ -243,25 +243,25 @@ export function accrueInterest(_: StaticArray<u8>): void {
       next_thread,
       next_period + 5,
       next_thread,
-      300_000,
+      200_000_000,
       0,
       0,
       []
     );
     return;
   }
-  
+
   const utilization = totalDeposits > 0 ? (totalBorrows * BASIS_POINTS) / totalDeposits : 0;
   const interestRate = BASE_INTEREST_RATE + (utilization * INTEREST_RATE_SLOPE) / BASIS_POINTS;
-  
+
   Storage.set(CURRENT_INTEREST_RATE_KEY, u64ToBytes(interestRate));
   Storage.set(LAST_ACCRUAL_KEY, u64ToBytes(currentTime));
-  
+
   generateEvent('Interest accrued');
-  
+
   const cur_period = Context.currentPeriod();
   const cur_thread = Context.currentThread();
-  
+
   const accrual_slots = INTEREST_ACCRUAL_INTERVAL;
   const accrual_periods_to_add = accrual_slots / 32;
   const accrual_thread_offset = accrual_slots % 32;
@@ -271,7 +271,7 @@ export function accrueInterest(_: StaticArray<u8>): void {
     next_period += 1;
     next_thread = next_thread - 32;
   }
-  
+
   sendMessage(
     Context.callee(),
     'accrueInterest',
@@ -289,22 +289,22 @@ export function accrueInterest(_: StaticArray<u8>): void {
 export function getUserDeposits(argsData: StaticArray<u8>): StaticArray<u8> {
   const user = bytesToString(argsData);
   const userDepositKey = stringToBytes(USER_DEPOSITS_PREFIX + user);
-  
+
   if (!Storage.has(userDepositKey)) {
     return u64ToBytes(0);
   }
-  
+
   return Storage.get(userDepositKey);
 }
 
 export function getPosition(argsData: StaticArray<u8>): StaticArray<u8> {
   const positionId = bytesToU64(argsData);
   const positionKey = stringToBytes(POSITION_PREFIX + positionId.toString());
-  
+
   if (!Storage.has(positionKey)) {
     return stringToBytes('');
   }
-  
+
   return Storage.get(positionKey);
 }
 
@@ -323,11 +323,15 @@ export function getCurrentInterestRate(_: StaticArray<u8>): StaticArray<u8> {
 export function getUtilizationRate(_: StaticArray<u8>): StaticArray<u8> {
   const totalDeposits = bytesToU64(Storage.get(TOTAL_DEPOSITS_KEY));
   const totalBorrows = bytesToU64(Storage.get(TOTAL_BORROWS_KEY));
-  
+
   if (totalDeposits == 0) {
     return u64ToBytes(0);
   }
-  
+
   const utilization = (totalBorrows * BASIS_POINTS) / totalDeposits;
   return u64ToBytes(utilization);
+}
+
+export function isAccrualActive(_: StaticArray<u8>): StaticArray<u8> {
+    return Storage.get(ACCRUAL_ACTIVE_KEY);
 }

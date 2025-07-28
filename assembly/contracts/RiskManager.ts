@@ -6,37 +6,53 @@ const GOVERNANCE_KEY = stringToBytes('GOVERNANCE');
 const ORACLE_KEY = stringToBytes('ORACLE');
 const COLLATERAL_VAULT_KEY = stringToBytes('COLLATERAL_VAULT');
 const LIQUIDATION_ENGINE_KEY = stringToBytes('LIQUIDATION_ENGINE');
-const NEXT_EVALUATION_KEY = stringToBytes('NEXT_EVALUATION');
+const LENDING_POOL_KEY = stringToBytes('LENDING_POOL');
 const POSITION_LTV_PREFIX = 'LTV_';
 const HIGH_RISK_POSITIONS_KEY = stringToBytes('HIGH_RISK_POSITIONS');
 const EVALUATION_ACTIVE_KEY = stringToBytes('EVALUATION_ACTIVE');
 
 export function constructor(argsData: StaticArray<u8>): void {
   assert(Context.isDeployingContract(), "Constructor can only be called during deployment");
-  
+
   const args = new Args(argsData);
   const governanceAddress = args.nextString().unwrap();
   const oracleAddress = args.nextString().unwrap();
   const vaultAddress = args.nextString().unwrap();
-  const liquidationAddress = args.nextString().unwrap();
-  
+
   Storage.set(GOVERNANCE_KEY, stringToBytes(governanceAddress));
   Storage.set(ORACLE_KEY, stringToBytes(oracleAddress));
   Storage.set(COLLATERAL_VAULT_KEY, stringToBytes(vaultAddress));
-  Storage.set(LIQUIDATION_ENGINE_KEY, stringToBytes(liquidationAddress));
   Storage.set(EVALUATION_ACTIVE_KEY, stringToBytes('false'));
   Storage.set(HIGH_RISK_POSITIONS_KEY, stringToBytes(''));
-  
+
   generateEvent('RiskManager deployed');
+}
+
+export function setLendingPool(argsData: StaticArray<u8>): void {
+    const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
+    const caller = Context.caller().toString();
+    assert(caller == governanceAddress, "Only governance can set lending pool");
+    const lendingPoolAddress = bytesToString(argsData);
+    Storage.set(LENDING_POOL_KEY, stringToBytes(lendingPoolAddress));
+    generateEvent('Lending pool address updated in RiskManager');
+}
+
+export function setLiquidationEngine(argsData: StaticArray<u8>): void {
+  const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == governanceAddress, "Only owner can set liquidation engine");
+  const liquidationAddress = bytesToString(argsData);
+  Storage.set(LIQUIDATION_ENGINE_KEY, stringToBytes(liquidationAddress));
+  generateEvent('Liquidation engine address updated in RiskManager');
 }
 
 export function startEvaluation(_: StaticArray<u8>): void {
   const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
   const caller = Context.caller().toString();
   assert(caller == governanceAddress, "Only governance can start evaluation");
-  
+
   Storage.set(EVALUATION_ACTIVE_KEY, stringToBytes('true'));
-  
+
   const cur_period = Context.currentPeriod();
   const cur_thread = Context.currentThread();
   let next_thread: u8 = cur_thread + 1;
@@ -45,7 +61,7 @@ export function startEvaluation(_: StaticArray<u8>): void {
     ++next_period;
     next_thread = 0;
   }
-  
+
   sendMessage(
     Context.callee(),
     'evaluate',
@@ -53,12 +69,12 @@ export function startEvaluation(_: StaticArray<u8>): void {
     next_thread,
     next_period + 5,
     next_thread,
-    500_000,
+    200_000_000,
     0,
     0,
     []
   );
-  
+
   generateEvent('Risk evaluation started');
 }
 
@@ -66,9 +82,9 @@ export function stopEvaluation(_: StaticArray<u8>): void {
   const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
   const caller = Context.caller().toString();
   assert(caller == governanceAddress, "Only governance can stop evaluation");
-  
+
   Storage.set(EVALUATION_ACTIVE_KEY, stringToBytes('false'));
-  
+
   generateEvent('Risk evaluation stopped');
 }
 
@@ -77,54 +93,80 @@ export function evaluate(_: StaticArray<u8>): void {
   if (isActive != 'true') {
     return;
   }
-  
-  const oracleAddress = new Address(bytesToString(Storage.get(ORACLE_KEY)));
+
+  const lendingPoolAddress = new Address(bytesToString(Storage.get(LENDING_POOL_KEY)));
   const vaultAddress = new Address(bytesToString(Storage.get(COLLATERAL_VAULT_KEY)));
-  const liquidationAddress = new Address(bytesToString(Storage.get(LIQUIDATION_ENGINE_KEY)));
-  
-  const twapResult = Storage.getOf(oracleAddress, stringToBytes('CURRENT_PRICE'));
-  const currentPrice = bytesToU64(twapResult);
-  
-  let highRiskPositions = '';
-  
-  generateEvent('Risk evaluation completed');
-  
+
+  let highRiskPositionsList: string[] = [];
+
+  for (let i: u64 = 1; i <= 20; i++) {
+    const positionKey = stringToBytes('POSITION_' + i.toString());
+    if (Storage.hasOf(lendingPoolAddress, positionKey)) {
+      const positionData = bytesToString(Storage.getOf(lendingPoolAddress, positionKey));
+      const parts = positionData.split(':');
+
+      if (parts.length >= 6 && parts[5] == 'true') {
+        const tokenId = U64.parseInt(parts[1]);
+        const borrowedAmount = U64.parseInt(parts[2]);
+        const accruedInterest = U64.parseInt(parts[3]);
+        const totalDebt = borrowedAmount + accruedInterest;
+
+        const valueKey = stringToBytes('NFT_VALUE_' + tokenId.toString());
+        if (Storage.hasOf(vaultAddress, valueKey)) {
+          const collateralValue = bytesToU64(Storage.getOf(vaultAddress, valueKey));
+
+          if (collateralValue > 0) {
+            const currentLTV = (totalDebt * BASIS_POINTS) / collateralValue;
+            const liquidationThreshold: u64 = 8500;
+            if (currentLTV > liquidationThreshold) {
+              highRiskPositionsList.push(i.toString());
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const highRiskPositions = highRiskPositionsList.join(',');
   Storage.set(HIGH_RISK_POSITIONS_KEY, stringToBytes(highRiskPositions));
-  
-  const liquidationCall = new Args().add(highRiskPositions);
   
   const cur_period = Context.currentPeriod();
   const cur_thread = Context.currentThread();
-  let next_thread: u8 = cur_thread + 1;
-  let next_period = cur_period;
-  if (next_thread >= 32) {
-    ++next_period;
-    next_thread = 0;
+
+  const liquidationAddress = new Address(bytesToString(Storage.get(LIQUIDATION_ENGINE_KEY)));
+  if (liquidationAddress.toString() != '' && highRiskPositions != '') {
+    let next_thread_liq: u8 = cur_thread + 1;
+    let next_period_liq = cur_period;
+    if (next_thread_liq >= 32) {
+        ++next_period_liq;
+        next_thread_liq = 0;
+    }
+    sendMessage(
+        liquidationAddress,
+        'checkAndLiquidate',
+        next_period_liq,
+        next_thread_liq,
+        next_period_liq + 5,
+        next_thread_liq,
+        200_000_000,
+        0,
+        0,
+        stringToBytes(highRiskPositions)
+    );
   }
-  
-  sendMessage(
-    liquidationAddress,
-    'checkAndLiquidate',
-    next_period,
-    next_thread,
-    next_period + 5,
-    next_thread,
-    200_000,
-    0,
-    0,
-    liquidationCall.serialize()
-  );
-  
+
   const eval_slots = RISK_EVALUATION_INTERVAL;
   const eval_periods_to_add = eval_slots / 32;
   const eval_thread_offset = eval_slots % 32;
+
   let eval_period = cur_period + eval_periods_to_add;
   let eval_thread: u8 = u8(cur_thread + eval_thread_offset);
+
   if (eval_thread >= 32) {
     eval_period += 1;
     eval_thread = eval_thread - 32;
   }
-  
+
   sendMessage(
     Context.callee(),
     'evaluate',
@@ -132,11 +174,13 @@ export function evaluate(_: StaticArray<u8>): void {
     eval_thread,
     eval_period + 5,
     eval_thread,
-    500_000,
+    200_000_000,
     0,
     0,
     []
   );
+
+  generateEvent('Risk evaluation completed. High risk positions: ' + highRiskPositions);
 }
 
 export function calculateLTV(argsData: StaticArray<u8>): StaticArray<u8> {
@@ -245,4 +289,11 @@ export function getHighRiskPositions(_: StaticArray<u8>): StaticArray<u8> {
 
 export function isEvaluationActive(_: StaticArray<u8>): StaticArray<u8> {
   return Storage.get(EVALUATION_ACTIVE_KEY);
+}
+
+export function getLendingPool(_: StaticArray<u8>): StaticArray<u8> {
+    if (!Storage.has(LENDING_POOL_KEY)) {
+        return stringToBytes('');
+    }
+    return Storage.get(LENDING_POOL_KEY);
 }
