@@ -29,13 +29,44 @@ async function main() {
   
   const action = process.argv[2];
   
+  const TX_GAS_LIMIT = { maxGas: BigInt(200_000_000) };
+
   switch (action) {
+    case 'startLendingAccrual': {
+      console.log('Starting lending pool interest accrual via governance...');
+      
+      const op = await governanceContract.call(
+        'startLendingPoolAccrual',
+        new Uint8Array(0),
+        TX_GAS_LIMIT
+      );
+      
+      await op.waitFinalExecution();
+      console.log('✅ Lending pool accrual started!');
+      break;
+    }
+    
+    case 'startRiskEvaluation': {
+      console.log('Starting risk manager evaluation via governance...');
+      
+      const op = await governanceContract.call(
+        'startRiskManagerEvaluation',
+        new Uint8Array(0),
+        TX_GAS_LIMIT
+      );
+      
+      await op.waitFinalExecution();
+      console.log('✅ Risk manager evaluation started!');
+      break;
+    }
+
     case 'startAccrual': {
       console.log('Starting interest accrual...');
       
       const op = await lendingPoolContract.call(
         'startAccrual',
-        new Uint8Array(0)
+        new Uint8Array(0),
+        TX_GAS_LIMIT
       );
       
       await op.waitFinalExecution();
@@ -48,7 +79,8 @@ async function main() {
       
       const op = await riskManagerContract.call(
         'startEvaluation',
-        new Uint8Array(0)
+        new Uint8Array(0),
+        TX_GAS_LIMIT
       );
       
       await op.waitFinalExecution();
@@ -60,7 +92,7 @@ async function main() {
       const value = process.argv[3] || '10000000';
       const pd = process.argv[4] || '500';
       const lgd = process.argv[5] || '4000';
-      const maturity = process.argv[6] || (Date.now() / 1000 + 365 * 24 * 3600).toString();
+      const maturity = process.argv[6] || Math.floor(Date.now() / 1000 + 365 * 24 * 3600).toString();
       
       console.log(`Minting NFT with value: ${value}, PD: ${pd}, LGD: ${lgd}...`);
       
@@ -73,10 +105,11 @@ async function main() {
       
       const op = await mockNFTContract.call(
         'mint',
-        mintArgs.serialize()
+        mintArgs.serialize(),
+        TX_GAS_LIMIT
       );
       
-      const result = await op.waitFinalExecution();
+      await op.waitFinalExecution();
       console.log('✅ NFT minted successfully!');
       break;
     }
@@ -89,7 +122,8 @@ async function main() {
       
       const op = await vaultContract.call(
         'depositNFT',
-        depositArgs.serialize()
+        depositArgs.serialize(),
+        TX_GAS_LIMIT
       );
       
       await op.waitFinalExecution();
@@ -104,7 +138,7 @@ async function main() {
       const op = await lendingPoolContract.call(
         'deposit',
         new Uint8Array(0),
-        { coins: amount }
+        { coins: amount, maxGas: TX_GAS_LIMIT.maxGas }
       );
       
       await op.waitFinalExecution();
@@ -123,7 +157,8 @@ async function main() {
       
       const op = await lendingPoolContract.call(
         'borrow',
-        borrowArgs.serialize()
+        borrowArgs.serialize(),
+        TX_GAS_LIMIT
       );
       
       await op.waitFinalExecution();
@@ -141,7 +176,7 @@ async function main() {
       const op = await lendingPoolContract.call(
         'repay',
         repayArgs.serialize(),
-        { coins: amount }
+        { coins: amount, maxGas: TX_GAS_LIMIT.maxGas }
       );
       
       await op.waitFinalExecution();
@@ -157,7 +192,8 @@ async function main() {
       
       const op = await oracleContract.call(
         'updatePrice',
-        priceArgs.serialize()
+        priceArgs.serialize(),
+        TX_GAS_LIMIT
       );
       
       await op.waitFinalExecution();
@@ -188,8 +224,8 @@ async function main() {
         const twapPrice = new Args(twapResult.value).nextU64();
         
         console.log('=== Protocol Statistics ===');
-        console.log(`💰 Total Deposits: ${Number(totalDeposits) / 1_000_000} MAS`);
-        console.log(`📊 Total Borrows: ${Number(totalBorrows) / 1_000_000} MAS`);
+        console.log(`💰 Total Deposits: ${Mas.toString(totalDeposits)} MAS`);
+        console.log(`📊 Total Borrows: ${Mas.toString(totalBorrows)} MAS`);
         console.log(`📈 Current Interest Rate: ${Number(interestRate) / 100}%`);
         console.log(`⚡ Utilization Rate: ${Number(utilization) / 100}%`);
         console.log(`🔮 Current Price: ${Number(currentPrice) / 1_000_000}`);
@@ -197,7 +233,7 @@ async function main() {
         
         const userDepositsResult = await lendingPoolContract.read('getUserDeposits', new Args().addString(account.address.toString()).serialize());
         const userDeposits = new Args(userDepositsResult.value).nextU64();
-        console.log(`👤 Your Deposits: ${Number(userDeposits) / 1_000_000} MAS`);
+        console.log(`👤 Your Deposits: ${Mas.toString(userDeposits)} MAS`);
         
       } catch (error) {
         console.error('Error fetching info:', error);
@@ -225,16 +261,15 @@ async function main() {
               console.log(`Position ${i}:`);
               console.log(`  Borrower: ${parts[0]}`);
               console.log(`  Token ID: ${parts[1]}`);
-              console.log(`  Borrowed: ${Number(parts[2]) / 1_000_000} MAS`);
-              console.log(`  Interest: ${Number(parts[3]) / 1_000_000} MAS`);
-              console.log(`  Last Update: ${new Date(Number(parts[4]) * 1000).toLocaleString()}`);
+              console.log(`  Borrowed: ${Mas.toString(BigInt(parts[2]))} MAS`);
+              console.log(`  Interest: ${Mas.toString(BigInt(parts[3]))} MAS`);
+              console.log(`  Last Update: ${new Date(Number(parts[4])).toLocaleString()}`);
               console.log(`  Active: ${parts[5]}`);
               console.log('');
             }
           }
         }
       } catch (error) {
-        console.error('Error fetching positions:', error);
       }
       break;
     }
@@ -258,9 +293,9 @@ async function main() {
               if (parts.length >= 6) {
                 console.log(`Auction ${auctionId}:`);
                 console.log(`  Token ID: ${parts[0]}`);
-                console.log(`  Starting Price: ${Number(parts[1]) / 1_000_000} MAS`);
-                console.log(`  End Time: ${new Date(Number(parts[2]) * 1000).toLocaleString()}`);
-                console.log(`  Highest Bid: ${Number(parts[3]) / 1_000_000} MAS`);
+                console.log(`  Starting Price: ${Mas.toString(BigInt(parts[1]))} MAS`);
+                console.log(`  End Time: ${new Date(Number(parts[2])).toLocaleString()}`);
+                console.log(`  Highest Bid: ${Mas.toString(BigInt(parts[3]))} MAS`);
                 console.log(`  Active: ${parts[5]}`);
                 console.log('');
               }
@@ -289,6 +324,9 @@ async function main() {
       console.log('  info                      - Show protocol information');
       console.log('  positions [user]          - Show user positions');
       console.log('  auctions                  - Show active auctions');
+      console.log('  startLendingAccrual       - Start automatic interest accrual');
+      console.log('  startRiskEvaluation       - Start automatic risk evaluation');
+      console.log('  checkGov                  - Check addresses in Governance');
     }
   }
 }

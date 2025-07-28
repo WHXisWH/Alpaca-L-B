@@ -1,4 +1,4 @@
-import { generateEvent, Storage, Context } from '@massalabs/massa-as-sdk';
+import { generateEvent, Storage, Context, sendMessage, Address } from '@massalabs/massa-as-sdk';
 import { stringToBytes, bytesToString, u64ToBytes, bytesToU64, Args } from '@massalabs/as-types';
 
 const OWNER_KEY = stringToBytes('OWNER');
@@ -23,7 +23,9 @@ export function setLendingPool(argsData: StaticArray<u8>): void {
   const caller = Context.caller().toString();
   assert(caller == owner, "Only owner can set lending pool");
   
-  const poolAddress = bytesToString(argsData);
+  const args = new Args(argsData);
+  const poolAddress = args.nextString().expect("Failed to decode LendingPool address.");
+  
   Storage.set(LENDING_POOL_KEY, stringToBytes(poolAddress));
   
   generateEvent('Lending pool address updated');
@@ -33,8 +35,10 @@ export function setRiskManager(argsData: StaticArray<u8>): void {
   const owner = bytesToString(Storage.get(OWNER_KEY));
   const caller = Context.caller().toString();
   assert(caller == owner, "Only owner can set risk manager");
-  
-  const riskAddress = bytesToString(argsData);
+
+  const args = new Args(argsData);
+  const riskAddress = args.nextString().expect("Failed to decode RiskManager address.");
+
   Storage.set(RISK_MANAGER_KEY, stringToBytes(riskAddress));
   
   generateEvent('Risk manager address updated');
@@ -45,7 +49,9 @@ export function setLiquidationEngine(argsData: StaticArray<u8>): void {
   const caller = Context.caller().toString();
   assert(caller == owner, "Only owner can set liquidation engine");
   
-  const liquidationAddress = bytesToString(argsData);
+  const args = new Args(argsData);
+  const liquidationAddress = args.nextString().expect("Failed to decode LiquidationEngine address.");
+
   Storage.set(LIQUIDATION_ENGINE_KEY, stringToBytes(liquidationAddress));
   
   generateEvent('Liquidation engine address updated');
@@ -56,7 +62,9 @@ export function setOracle(argsData: StaticArray<u8>): void {
   const caller = Context.caller().toString();
   assert(caller == owner, "Only owner can set oracle");
   
-  const oracleAddress = bytesToString(argsData);
+  const args = new Args(argsData);
+  const oracleAddress = args.nextString().expect("Failed to decode Oracle address.");
+
   Storage.set(ORACLE_KEY, stringToBytes(oracleAddress));
   
   generateEvent('Oracle address updated');
@@ -67,7 +75,9 @@ export function setCollateralVault(argsData: StaticArray<u8>): void {
   const caller = Context.caller().toString();
   assert(caller == owner, "Only owner can set collateral vault");
   
-  const vaultAddress = bytesToString(argsData);
+  const args = new Args(argsData);
+  const vaultAddress = args.nextString().expect("Failed to decode CollateralVault address.");
+
   Storage.set(COLLATERAL_VAULT_KEY, stringToBytes(vaultAddress));
   
   generateEvent('Collateral vault address updated');
@@ -147,8 +157,76 @@ export function transferOwnership(argsData: StaticArray<u8>): void {
   const caller = Context.caller().toString();
   assert(caller == owner, "Only owner can transfer ownership");
   
-  const newOwner = bytesToString(argsData);
+  const args = new Args(argsData);
+  const newOwner = args.nextString().expect("Failed to decode new owner address.");
+
   Storage.set(OWNER_KEY, stringToBytes(newOwner));
   
   generateEvent('Ownership transferred');
+}
+
+export function startLendingPoolAccrual(_: StaticArray<u8>): void {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can start lending pool accrual");
+  
+  const lendingPoolAddress = bytesToString(Storage.get(LENDING_POOL_KEY));
+  assert(lendingPoolAddress != '', "Lending pool not set");
+  
+  const cur_period = Context.currentPeriod();
+  const cur_thread = Context.currentThread();
+  let next_thread: u8 = cur_thread + 1;
+  let next_period = cur_period;
+  if (next_thread >= 32) {
+    ++next_period;
+    next_thread = 0;
+  }
+  
+  sendMessage(
+    new Address(lendingPoolAddress),
+    'startAccrual',
+    next_period,
+    next_thread,
+    next_period + 5,
+    next_thread,
+    300_000,
+    0,
+    0,
+    []
+  );
+  
+  generateEvent('Lending pool accrual start triggered');
+}
+
+export function startRiskManagerEvaluation(_: StaticArray<u8>): void {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can start risk manager evaluation");
+  
+  const riskManagerAddress = bytesToString(Storage.get(RISK_MANAGER_KEY));
+  assert(riskManagerAddress != '', "Risk manager not set");
+  
+  const cur_period = Context.currentPeriod();
+  const cur_thread = Context.currentThread();
+  let next_thread: u8 = cur_thread + 1;
+  let next_period = cur_period;
+  if (next_thread >= 32) {
+    ++next_period;
+    next_thread = 0;
+  }
+  
+  sendMessage(
+    new Address(riskManagerAddress),
+    'startEvaluation',
+    next_period,
+    next_thread,
+    next_period + 5,
+    next_thread,
+    500_000,
+    0,
+    0,
+    []
+  );
+  
+  generateEvent('Risk manager evaluation start triggered');
 }

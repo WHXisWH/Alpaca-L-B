@@ -51,7 +51,7 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
   const safeParseString = (result: any, defaultValue: string = ''): string => {
     try {
       if (!result || !result.value || result.value.length === 0) return defaultValue;
-      return new TextDecoder().decode(result.value);
+      return new massa.Args(result.value).nextString();
     } catch (error) {
       return defaultValue;
     }
@@ -60,7 +60,7 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
   const safeParseBoolean = (result: any, defaultValue: boolean = false): boolean => {
     try {
       if (!result || !result.value || result.value.length === 0) return defaultValue;
-      return new TextDecoder().decode(result.value) === 'true';
+      return new massa.Args(result.value).nextString() === 'true';
     } catch (error) {
       return defaultValue;
     }

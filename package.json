@@ -17,14 +17,14 @@
     "@massalabs/massa-as-sdk": "^2.3.0",
     "@massalabs/massa-sc-compiler": "^0.1.0",
     "@massalabs/massa-sc-deployer": "^0.5.1",
-    "@massalabs/massa-web3": "^1.21.0",
+    "@massalabs/massa-web3": "^5.2.0",
     "@types/node": "^18.11.10",
+    "as-bignum": "^0.2.23",
     "assemblyscript": "^0.25.0",
     "dotenv": "^16.0.3",
+    "rimraf": "^3.0.2",
     "tsx": "^4.7.0",
-    "typescript": "^4.8.4",
-    "as-bignum": "^0.2.23",
-    "rimraf": "^3.0.2"
+    "typescript": "^4.8.4"
   },
   "type": "module"
 }

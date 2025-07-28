@@ -1,47 +1,41 @@
 import 'dotenv/config';
 import { readFileSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
-import {
-  Account,
-  SmartContract,
-  JsonRpcProvider,
-  Mas,
-  Args
-} from '@massalabs/massa-web3';
+import * as massa from '@massalabs/massa-web3';
 
 async function main() {
-  console.log('Alpaca LB Deployment Script');
+  console.log('Alpaca Bridge Deployment Script');
   console.log('===========================');
   
-  const account = await Account.fromEnv();
-  const provider = JsonRpcProvider.buildnet(account);
+  const account = await massa.Account.fromEnv();
+  const provider = massa.JsonRpcProvider.buildnet(account);
   
   console.log(`Deploying from account: ${account.address.toString()}`);
   
   const balance = await provider.balance(true);
-  console.log(`Account balance: ${Mas.toString(balance)} MAS`);
+  console.log(`Account balance: ${massa.Mas.toString(balance)} MAS`);
   
   const addresses: Record<string, string> = {};
   
-  let nftContract: SmartContract;
-  let governanceContract: SmartContract;
-  let oracleContract: SmartContract;
-  let vaultContract: SmartContract;
-  let riskManagerContract: SmartContract;
-  let lendingPoolContract: SmartContract;
-  let liquidationContract: SmartContract;
+  let nftContract: massa.SmartContract;
+  let governanceContract: massa.SmartContract;
+  let oracleContract: massa.SmartContract;
+  let vaultContract: massa.SmartContract;
+  let riskManagerContract: massa.SmartContract;
+  let lendingPoolContract: massa.SmartContract;
+  let liquidationContract: massa.SmartContract;
   
   console.log('\nStep 1: Deploying MockNFT contract...');
   const nftBytecode = readFileSync('./build/MockNFT.wasm');
   
   try {
-    nftContract = await SmartContract.deploy(
+    nftContract = await massa.SmartContract.deploy(
       provider,
       nftBytecode,
       new Uint8Array(0),
       {
-        coins: Mas.fromString('1'),
-        fee: Mas.fromString('0.01')
+        coins: massa.Mas.fromString('1'),
+        fee: massa.Mas.fromString('0.01')
       }
     );
     
@@ -56,13 +50,13 @@ async function main() {
   const governanceBytecode = readFileSync('./build/Governance.wasm');
   
   try {
-    governanceContract = await SmartContract.deploy(
+    governanceContract = await massa.SmartContract.deploy(
       provider,
       governanceBytecode,
       new Uint8Array(0),
       {
-        coins: Mas.fromString('1'),
-        fee: Mas.fromString('0.01')
+        coins: massa.Mas.fromString('1'),
+        fee: massa.Mas.fromString('0.01')
       }
     );
     
@@ -77,13 +71,13 @@ async function main() {
   const oracleBytecode = readFileSync('./build/Oracle.wasm');
   
   try {
-    oracleContract = await SmartContract.deploy(
+    oracleContract = await massa.SmartContract.deploy(
       provider,
       oracleBytecode,
       new Uint8Array(0),
       {
-        coins: Mas.fromString('1'),
-        fee: Mas.fromString('0.01')
+        coins: massa.Mas.fromString('1'),
+        fee: massa.Mas.fromString('0.01')
       }
     );
     
@@ -98,17 +92,17 @@ async function main() {
   const vaultBytecode = readFileSync('./build/CollateralVault.wasm');
   
   try {
-    const vaultConstructorArgs = new Args()
+    const vaultConstructorArgs = new massa.Args()
       .addString(addresses.governance)
       .addString(addresses.mockNFT);
     
-    vaultContract = await SmartContract.deploy(
+    vaultContract = await massa.SmartContract.deploy(
       provider,
       vaultBytecode,
       vaultConstructorArgs.serialize(),
       {
-        coins: Mas.fromString('1'),
-        fee: Mas.fromString('0.01')
+        coins: massa.Mas.fromString('1'),
+        fee: massa.Mas.fromString('0.01')
       }
     );
     
@@ -123,19 +117,19 @@ async function main() {
   const riskManagerBytecode = readFileSync('./build/RiskManager.wasm');
   
   try {
-    const riskConstructorArgs = new Args()
+    const riskConstructorArgs = new massa.Args()
       .addString(addresses.governance)
       .addString(addresses.oracle)
       .addString(addresses.collateralVault)
       .addString('PLACEHOLDER_LIQUIDATION');
     
-    riskManagerContract = await SmartContract.deploy(
+    riskManagerContract = await massa.SmartContract.deploy(
       provider,
       riskManagerBytecode,
       riskConstructorArgs.serialize(),
       {
-        coins: Mas.fromString('1'),
-        fee: Mas.fromString('0.01')
+        coins: massa.Mas.fromString('1'),
+        fee: massa.Mas.fromString('0.01')
       }
     );
     
@@ -150,18 +144,18 @@ async function main() {
   const lendingPoolBytecode = readFileSync('./build/LendingPool.wasm');
   
   try {
-    const poolConstructorArgs = new Args()
+    const poolConstructorArgs = new massa.Args()
       .addString(addresses.governance)
       .addString(addresses.riskManager)
       .addString(addresses.collateralVault);
     
-    lendingPoolContract = await SmartContract.deploy(
+    lendingPoolContract = await massa.SmartContract.deploy(
       provider,
       lendingPoolBytecode,
       poolConstructorArgs.serialize(),
       {
-        coins: Mas.fromString('1'),
-        fee: Mas.fromString('0.01')
+        coins: massa.Mas.fromString('1'),
+        fee: massa.Mas.fromString('0.01')
       }
     );
     
@@ -176,19 +170,19 @@ async function main() {
   const liquidationBytecode = readFileSync('./build/LiquidationEngine.wasm');
   
   try {
-    const liquidationConstructorArgs = new Args()
+    const liquidationConstructorArgs = new massa.Args()
       .addString(addresses.governance)
       .addString(addresses.lendingPool)
       .addString(addresses.riskManager)
       .addString(addresses.collateralVault);
     
-    liquidationContract = await SmartContract.deploy(
+    liquidationContract = await massa.SmartContract.deploy(
       provider,
       liquidationBytecode,
       liquidationConstructorArgs.serialize(),
       {
-        coins: Mas.fromString('1'),
-        fee: Mas.fromString('0.01')
+        coins: massa.Mas.fromString('1'),
+        fee: massa.Mas.fromString('0.01')
       }
     );
     
@@ -205,35 +199,35 @@ async function main() {
     console.log('Setting CollateralVault address in Governance...');
     const setVaultOp = await governanceContract.call(
       'setCollateralVault',
-      new Args().addString(addresses.collateralVault).serialize()
+      new massa.Args().addString(addresses.collateralVault).serialize()
     );
     await setVaultOp.waitFinalExecution();
     
     console.log('Setting LendingPool address in Governance...');
     const setPoolOp = await governanceContract.call(
       'setLendingPool',
-      new Args().addString(addresses.lendingPool).serialize()
+      new massa.Args().addString(addresses.lendingPool).serialize()
     );
     await setPoolOp.waitFinalExecution();
     
     console.log('Setting RiskManager address in Governance...');
     const setRiskOp = await governanceContract.call(
       'setRiskManager',
-      new Args().addString(addresses.riskManager).serialize()
+      new massa.Args().addString(addresses.riskManager).serialize()
     );
     await setRiskOp.waitFinalExecution();
     
     console.log('Setting LiquidationEngine address in Governance...');
     const setLiquidationOp = await governanceContract.call(
       'setLiquidationEngine',
-      new Args().addString(addresses.liquidationEngine).serialize()
+      new massa.Args().addString(addresses.liquidationEngine).serialize()
     );
     await setLiquidationOp.waitFinalExecution();
     
     console.log('Setting Oracle address in Governance...');
     const setOracleOp = await governanceContract.call(
       'setOracle',
-      new Args().addString(addresses.oracle).serialize()
+      new massa.Args().addString(addresses.oracle).serialize()
     );
     await setOracleOp.waitFinalExecution();
     
@@ -266,8 +260,8 @@ async function main() {
   console.log(JSON.stringify(addresses, null, 2));
   
   console.log('\n📝 Next steps:');
-  console.log('1. Start interest accrual: npm run interact startAccrual');
-  console.log('2. Start risk evaluation: npm run interact startEvaluation');
+  console.log('1. Start interest accrual: npm run interact startLendingAccrual');
+  console.log('2. Start risk evaluation: npm run interact startRiskEvaluation');
   console.log('3. Mint test NFTs: npm run interact mintNFT');
   console.log('4. Test deposit: npm run interact deposit 10');
 }
