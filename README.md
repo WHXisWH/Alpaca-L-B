@@ -1,4 +1,4 @@
-# 🦙 Alpaca LB - Autonomous Lending Protocol
+# 🦙 Alpaca Bridge - Autonomous Lending Protocol
 
 A cutting-edge DeFi lending platform built on Massa blockchain, leveraging Autonomous Smart Contracts (ASC) and Real World Assets (RWA) as collateral. Experience the future of decentralized finance with self-executing risk management and guaranteed liquidations.
 
