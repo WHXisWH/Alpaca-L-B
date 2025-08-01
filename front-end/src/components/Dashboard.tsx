@@ -34,7 +34,7 @@ export default function Dashboard({ provider, addresses, onBalanceChange }: Dash
       case TABS.BORROW:
         return <BorrowingInterface positions={positions} onSuccess={handleSuccess} />;
       case TABS.POSITIONS:
-        return <CollateralManager positions={positions} onSuccess={handleSuccess} />;
+        return <CollateralManager positions={positions} provider={provider} addresses={addresses}  onSuccess={handleSuccess} />;
       case TABS.LIQUIDATIONS:
         return <LiquidationPanel provider={provider} addresses={addresses} />;
       default:

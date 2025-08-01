@@ -1,13 +1,25 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import * as massa from '@massalabs/massa-web3';
+import { useContracts } from '../hooks/useContracts';
 import { formatMAS, getErrorMessage, validateAmount } from '../utils/massa';
-import { TRANSACTION_STATES } from '../utils/constants';
+import { TRANSACTION_STATES, REFRESH_INTERVALS } from '../utils/constants';
 
 interface CollateralManagerProps {
   positions: any;
+  provider?: any;
+  addresses?: Record<string, string>;
   onSuccess: () => void;
 }
 
-export default function CollateralManager({ positions, onSuccess }: CollateralManagerProps) {
+interface MyNFT {
+  id: number;
+  value: string;
+  pd: string;
+  lgd: string;
+  isDeposited: boolean;
+}
+
+export default function CollateralManager({ positions, provider, addresses, onSuccess }: CollateralManagerProps) {
   const [nftValue, setNftValue] = useState('');
   const [nftPD, setNftPD] = useState('');
   const [nftLGD, setNftLGD] = useState('');
@@ -16,6 +28,107 @@ export default function CollateralManager({ positions, onSuccess }: CollateralMa
   const [transactionState, setTransactionState] = useState(TRANSACTION_STATES.IDLE);
   const [error, setError] = useState('');
   const [newlyMintedId, setNewlyMintedId] = useState<bigint | null>(null);
+  const [myNFTs, setMyNFTs] = useState<MyNFT[]>([]);
+  const [isLoadingNFTs, setIsLoadingNFTs] = useState(false);
+  
+  const actualProvider = provider || positions.provider || (positions as any).provider;
+  const actualAddresses = addresses || positions.addresses || (positions as any).addresses;
+  const contracts = useContracts(actualProvider, actualAddresses);
+
+  const areNFTsEqual = (nfts1: MyNFT[], nfts2: MyNFT[]): boolean => {
+    if (nfts1.length !== nfts2.length) return false;
+    return nfts1.every(nft1 => {
+      const nft2 = nfts2.find(n => n.id === nft1.id);
+      return nft2 && 
+        nft1.value === nft2.value && 
+        nft1.pd === nft2.pd && 
+        nft1.lgd === nft2.lgd && 
+        nft1.isDeposited === nft2.isDeposited;
+    });
+  };
+
+  const fetchMyNFTs = async (showLoading: boolean = true): Promise<void> => {
+    if (!contracts.mockNFT || !actualProvider) return;
+    
+    if (showLoading) {
+      setIsLoadingNFTs(true);
+    }
+    const userAddress = actualProvider.address;
+    const nfts: MyNFT[] = [];
+    
+    try {
+      for (let i = 1; i <= 50; i++) {
+        try {
+          const ownerResult = await contracts.mockNFT.read(
+            'ownerOf', 
+            new massa.Args().addU64(BigInt(i)).serialize()
+          );
+          
+          if (!ownerResult.value || ownerResult.value.length === 0) {
+            continue;
+          }
+          
+          const owner = new TextDecoder().decode(ownerResult.value);
+          
+          if (owner === userAddress) {
+            const [valueResult, pdResult, lgdResult] = await Promise.all([
+              contracts.mockNFT.read('getTokenValue', new massa.Args().addU64(BigInt(i)).serialize()),
+              contracts.mockNFT.read('getTokenPD', new massa.Args().addU64(BigInt(i)).serialize()),
+              contracts.mockNFT.read('getTokenLGD', new massa.Args().addU64(BigInt(i)).serialize())
+            ]);
+            
+            if (!valueResult.value || valueResult.value.length === 0 ||
+                !pdResult.value || pdResult.value.length === 0 ||
+                !lgdResult.value || lgdResult.value.length === 0) {
+              continue;
+            }
+            
+            const value = new massa.Args(valueResult.value).nextU64();
+            const pd = new massa.Args(pdResult.value).nextU64();
+            const lgd = new massa.Args(lgdResult.value).nextU64();
+            
+            let isDeposited = false;
+            if (contracts.collateralVault) {
+              try {
+                const depositedResult = await contracts.collateralVault.read(
+                  'isNFTDeposited',
+                  new massa.Args().addU64(BigInt(i)).serialize()
+                );
+                if (depositedResult.value && depositedResult.value.length > 0) {
+                  isDeposited = new TextDecoder().decode(depositedResult.value) === 'true';
+                }
+              } catch (e) {
+              }
+            }
+            
+            nfts.push({
+              id: i,
+              value: value.toString(),
+              pd: pd.toString(),
+              lgd: lgd.toString(),
+              isDeposited
+            });
+          }
+        } catch (error) {
+          continue;
+        }
+      }
+      
+      if (!areNFTsEqual(myNFTs, nfts)) {
+        setMyNFTs(nfts);
+      }
+    } catch (error) {
+      console.error('Failed to fetch user NFTs:', error);
+    } finally {
+      if (showLoading) {
+        setIsLoadingNFTs(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    fetchMyNFTs(true);
+  }, [contracts.mockNFT, actualProvider]);
 
   const handleMintNFT = async () => {
     if (!validateAmount(nftValue) || !validateAmount(nftPD) || !validateAmount(nftLGD)) {
@@ -40,11 +153,15 @@ export default function CollateralManager({ positions, onSuccess }: CollateralMa
       setNftValue('');
       setNftPD('');
       setNftLGD('');
-      onSuccess();
+      
+      setTimeout(() => {
+        fetchMyNFTs(false);
+        onSuccess();
+      }, 2000);
       
       setTimeout(() => {
         setTransactionState(TRANSACTION_STATES.IDLE);
-      }, 5000);
+      }, 10000);
     } catch (err) {
       setError(getErrorMessage(err));
       setTransactionState(TRANSACTION_STATES.ERROR);
@@ -68,7 +185,11 @@ export default function CollateralManager({ positions, onSuccess }: CollateralMa
       await positions.depositNFT(parseInt(depositTokenId));
       setTransactionState(TRANSACTION_STATES.SUCCESS);
       setDepositTokenId('');
-      onSuccess();
+      
+      setTimeout(() => {
+        fetchMyNFTs(false);
+        onSuccess();
+      }, 2000);
       
       setTimeout(() => {
         setTransactionState(TRANSACTION_STATES.IDLE);
@@ -96,7 +217,11 @@ export default function CollateralManager({ positions, onSuccess }: CollateralMa
       await positions.withdrawNFT(parseInt(withdrawTokenId));
       setTransactionState(TRANSACTION_STATES.SUCCESS);
       setWithdrawTokenId('');
-      onSuccess();
+      
+      setTimeout(() => {
+        fetchMyNFTs(false);
+        onSuccess();
+      }, 2000);
       
       setTimeout(() => {
         setTransactionState(TRANSACTION_STATES.IDLE);
@@ -126,7 +251,14 @@ export default function CollateralManager({ positions, onSuccess }: CollateralMa
         {transactionState === TRANSACTION_STATES.SUCCESS && (
           <div className="success-message">
             ✅ Transaction Successful!
-            {newlyMintedId !== null && ` Your new NFT ID is: ${newlyMintedId.toString()}`}
+            {newlyMintedId !== null && (
+              <div style={{ marginTop: '10px', fontSize: '16px', fontWeight: 'bold' }}>
+                🎉 Your new NFT ID is: <span style={{ color: 'var(--primary)' }}>{newlyMintedId.toString()}</span>
+                <div style={{ fontSize: '14px', fontWeight: 'normal', marginTop: '5px' }}>
+                  Use this ID to deposit your NFT as collateral below!
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -212,7 +344,7 @@ export default function CollateralManager({ positions, onSuccess }: CollateralMa
             disabled={isTransacting}
           />
           <div className="input-hint">
-            The ID of the NFT you want to deposit as collateral
+            The ID of the NFT you want to deposit as collateral (see "Available NFTs" below for IDs)
           </div>
         </div>
 
@@ -273,11 +405,106 @@ export default function CollateralManager({ positions, onSuccess }: CollateralMa
       </div>
 
       <div className="stat-card">
-        <div className="section-title">🏛️ Your Collateral Portfolio</div>
+        <div className="section-title">
+          🎯 Available NFTs
+          <button
+            onClick={() => fetchMyNFTs(false)}
+            disabled={isLoadingNFTs}
+            style={{
+              marginLeft: '10px',
+              padding: '4px 8px',
+              fontSize: '12px',
+              background: 'var(--primary)',
+              color: 'white',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer'
+            }}
+          >
+            🔄
+          </button>
+        </div>
+        <p style={{ color: 'var(--text-secondary)', marginBottom: '20px' }}>
+          NFTs you own that are available for collateral deposit. Click the NFT ID to auto-fill the deposit form below.
+        </p>
+        
+        {isLoadingNFTs ? (
+          <div style={{ textAlign: 'center', padding: '20px' }}>
+            <div className="loading-spinner"></div>
+            <p style={{ marginTop: '10px', color: 'var(--text-secondary)' }}>Loading your NFTs...</p>
+          </div>
+        ) : myNFTs.filter(nft => !nft.isDeposited).length === 0 ? (
+          <div className="empty-state">
+            <h3>No Available NFTs</h3>
+            <p>You don't have any available NFTs. Mint one above or withdraw deposited ones!</p>
+          </div>
+        ) : (
+          <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+            {myNFTs.filter(nft => !nft.isDeposited).map((nft) => (
+              <div key={nft.id} className="position-card" style={{ marginBottom: '10px' }}>
+                <div className="position-header">
+                  <span 
+                    className="position-id" 
+                    style={{ cursor: 'pointer' }}
+                    onClick={() => {
+                      navigator.clipboard.writeText(nft.id.toString());
+                      setDepositTokenId(nft.id.toString());
+                    }}
+                    title="Click to copy ID and auto-fill deposit form"
+                  >
+                    NFT #{nft.id} 📋
+                  </span>
+                  <span className="position-status status-active">Available</span>
+                </div>
+                
+                <div className="position-details">
+                  <div className="detail-item">
+                    <span className="detail-label">Value</span>
+                    <span className="detail-value">{formatMAS(nft.value)} MAS</span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-label">PD</span>
+                    <span className="detail-value">{(Number(nft.pd) / 100).toFixed(2)}%</span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-label">LGD</span>
+                    <span className="detail-value">{(Number(nft.lgd) / 100).toFixed(2)}%</span>
+                  </div>
+                  <div className="detail-item">
+                    <span className="detail-label">Expected LTV</span>
+                    <span className="detail-value">
+                      {Number(nft.pd) / 100 <= 1 ? '80%' : 
+                       Number(nft.pd) / 100 <= 5 ? '75%' :
+                       Number(nft.pd) / 100 <= 10 ? '70%' :
+                       Number(nft.pd) / 100 <= 20 ? '65%' : '60%'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {myNFTs.filter(nft => !nft.isDeposited).length > 0 && (
+          <div style={{ 
+            marginTop: '15px', 
+            padding: '10px', 
+            background: 'var(--surface-light)', 
+            borderRadius: '8px',
+            fontSize: '12px',
+            color: 'var(--text-secondary)'
+          }}>
+            💡 Tip: Click on any NFT ID (📋) to automatically fill the deposit form below!
+          </div>
+        )}
+      </div>
+
+      <div className="stat-card">
+        <div className="section-title">🏛️ Deposited Collateral</div>
         
         {positions.userCollaterals.length === 0 ? (
           <div className="empty-state">
-            <h3>No Collateral Assets</h3>
+            <h3>No Deposited Collateral</h3>
             <p>You haven't deposited any NFT collateral yet.</p>
           </div>
         ) : (

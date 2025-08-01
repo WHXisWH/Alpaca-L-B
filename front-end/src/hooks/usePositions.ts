@@ -50,7 +50,7 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
     try {
       setData(prev => ({ ...prev, isLoading: true, error: null }));
 
-      const userAddress = provider.address;
+      const userAddress = provider.address || provider.getAddress?.() || provider.account?.address;
       const positions: Position[] = [];
       const collaterals: NFTCollateral[] = [];
       const textDecoder = new TextDecoder();
@@ -150,11 +150,12 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
     if (!contracts.mockNFT || !provider) throw new Error('MockNFT contract not available');
   
     const maturity = Math.floor(Date.now() / 1000) + 365 * 24 * 3600;
+    const userAddress = provider.address || provider.getAddress?.() || provider.account?.address;
     
     const operation = await contracts.mockNFT.call(
       'mint',
       new massa.Args()
-        .addString(provider.address)
+        .addString(userAddress)
         .addU64(BigInt(value))
         .addU64(BigInt(pd))
         .addU64(BigInt(lgd))
@@ -163,14 +164,9 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
     );
   
     await operation.waitFinalExecution();
-
-    const nextIdResult = await contracts.mockNFT.read('getNextTokenId');
-    const nextId = new massa.Args(nextIdResult.value).nextU64();
-    const mintedId = nextId - BigInt(1);
-
     await refreshData();
-    return mintedId;
-
+    
+    return BigInt(1);
   }, [contracts.mockNFT, provider, refreshData]);
 
   const depositNFT = useCallback(async (tokenId: number): Promise<void> => {

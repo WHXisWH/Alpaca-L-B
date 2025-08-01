@@ -13,10 +13,13 @@ interface AppState {
   isConnected: boolean;
   isLoading: boolean;
   error: string | null;
+  showWalletSelector: boolean;
+  availableWallets: any[];
 }
 
 const WALLET_CONNECTION_KEY = 'alpaca_wallet_connected';
 const WALLET_TYPE_KEY = 'alpaca_wallet_type';
+const WALLET_NAME_KEY = 'alpaca_wallet_name';
 
 function App() {
   const [state, setState] = useState<AppState>({
@@ -27,7 +30,9 @@ function App() {
     balance: '0',
     isConnected: false,
     isLoading: true,
-    error: null
+    error: null,
+    showWalletSelector: false,
+    availableWallets: []
   });
 
   useEffect(() => {
@@ -76,33 +81,56 @@ function App() {
     try {
       const wallets = await getWallets();
       
-      if (wallets.length === 0) {
+      const filteredWallets = wallets.filter(w => {
+        const walletName = w.name().toLowerCase();
+        return !walletName.includes('metamask');
+      });
+      
+      if (filteredWallets.length === 0) {
         throw new Error('No wallet found');
       }
       
-      const selectedWallet = wallets[0];
+      const savedWalletName = localStorage.getItem(WALLET_NAME_KEY);
+      let selectedWallet = filteredWallets[0];
       
-      if (selectedWallet.connected && selectedWallet.connected()) {
-        const accounts = await selectedWallet.accounts();
-        if (accounts.length > 0) {
-          const provider = accounts[0];
-          const balance = await provider.balance(true);
-          
-          setState(prev => ({
-            ...prev,
-            provider,
-            wallet: selectedWallet,
-            balance: massa.Mas.toString(balance),
-            isConnected: true,
-            isLoading: false
-          }));
-          
-          console.log('Wallet reconnected successfully');
-          return;
+      if (savedWalletName) {
+        const foundWallet = filteredWallets.find(w => w.name() === savedWalletName);
+        if (foundWallet) {
+          selectedWallet = foundWallet;
         }
       }
       
-      throw new Error('Wallet not connected');
+      const walletName = selectedWallet.name().toLowerCase();
+      
+      if (walletName.includes('bearby')) {
+        if (!selectedWallet.connected()) {
+          const connected = await selectedWallet.connect();
+          if (!connected) {
+            throw new Error('Failed to connect to Bearby');
+          }
+        }
+      }
+      
+      const accounts = await selectedWallet.accounts();
+        if (accounts.length > 0) {
+      const provider = accounts[0];
+  
+      const balance = await provider.balance(true);
+        
+        setState(prev => ({
+          ...prev,
+          provider,
+          wallet: selectedWallet,
+          balance: massa.Mas.toString(balance),
+          isConnected: true,
+          isLoading: false
+        }));
+        
+        console.log('Wallet reconnected successfully');
+        return;
+      }
+      
+      throw new Error('No accounts found');
       
     } catch (error) {
       throw error;
@@ -146,11 +174,15 @@ function App() {
   const clearConnectionState = () => {
     localStorage.removeItem(WALLET_CONNECTION_KEY);
     localStorage.removeItem(WALLET_TYPE_KEY);
+    localStorage.removeItem(WALLET_NAME_KEY);
   };
 
-  const saveConnectionState = (type: 'wallet' | 'env') => {
+  const saveConnectionState = (type: 'wallet' | 'env', walletName?: string) => {
     localStorage.setItem(WALLET_CONNECTION_KEY, 'true');
     localStorage.setItem(WALLET_TYPE_KEY, type);
+    if (walletName) {
+      localStorage.setItem(WALLET_NAME_KEY, walletName);
+    }
   };
 
   const connectWallet = async () => {
@@ -159,35 +191,25 @@ function App() {
     try {
       const wallets = await getWallets();
       
-      if (wallets.length === 0) {
+      const filteredWallets = wallets.filter(w => {
+        const walletName = w.name().toLowerCase();
+        return !walletName.includes('metamask');
+      });
+      
+      if (filteredWallets.length === 0) {
         throw new Error('No wallet found. Please install MassaStation or Bearby.');
       }
       
-      const selectedWallet = wallets[0];
-      const connected = await selectedWallet.connect();
-      
-      if (!connected) {
-        throw new Error('Failed to connect to wallet');
+      if (filteredWallets.length === 1) {
+        await connectToWallet(filteredWallets[0]);
+      } else {
+        setState(prev => ({
+          ...prev,
+          availableWallets: filteredWallets,
+          showWalletSelector: true,
+          isLoading: false
+        }));
       }
-      
-      const accounts = await selectedWallet.accounts();
-      if (accounts.length === 0) {
-        throw new Error('No accounts found in wallet');
-      }
-      
-      const provider = accounts[0];
-      const balance = await provider.balance(true);
-      
-      saveConnectionState('wallet');
-      
-      setState(prev => ({
-        ...prev,
-        provider,
-        wallet: selectedWallet,
-        balance: massa.Mas.toString(balance),
-        isConnected: true,
-        isLoading: false
-      }));
       
     } catch (error) {
       console.error('Wallet connection error:', error);
@@ -198,7 +220,7 @@ function App() {
           const provider = massa.JsonRpcProvider.buildnet(account);
           const balance = await provider.balance(true);
           
-          saveConnectionState('env');
+          saveConnectionState('env', 'env');
           
           setState(prev => ({
             ...prev,
@@ -214,19 +236,65 @@ function App() {
       } catch (envError) {
         setState(prev => ({
           ...prev,
-          error: 'Failed to connect wallet. Please install a wallet or configure private key.',
+          error: 'Failed to connect wallet. Please install MassaStation or Bearby.',
           isLoading: false
         }));
       }
     }
   };
 
+  const connectToWallet = async (selectedWallet: any) => {
+    try {
+      const walletName = selectedWallet.name().toLowerCase();
+      
+      if (walletName.includes('bearby')) {
+        const connected = await selectedWallet.connect();
+        if (!connected) {
+          throw new Error('Failed to connect to Bearby');
+        }
+      }
+      
+      const accounts = await selectedWallet.accounts();
+      if (accounts.length === 0) {
+        throw new Error('No accounts found in wallet');
+      }
+
+      const provider = accounts[0];
+
+      const balance = await provider.balance(true);
+      
+      saveConnectionState('wallet', selectedWallet.name());
+      
+      setState(prev => ({
+        ...prev,
+        provider,
+        wallet: selectedWallet,
+        balance: massa.Mas.toString(balance),
+        isConnected: true,
+        isLoading: false,
+        showWalletSelector: false
+      }));
+      
+    } catch (error) {
+      setState(prev => ({
+        ...prev,
+        error: `Failed to connect to ${selectedWallet.name()}: ${error.message}`,
+        isLoading: false,
+        showWalletSelector: false
+      }));
+    }
+  };
+
   const disconnectWallet = async () => {
-    if (state.wallet && state.wallet.disconnect) {
-      try {
-        await state.wallet.disconnect();
-      } catch (error) {
-        console.log('Error disconnecting wallet:', error);
+    if (state.wallet) {
+      const walletName = state.wallet.name().toLowerCase();
+      
+      if (walletName.includes('bearby') && state.wallet.disconnect) {
+        try {
+          await state.wallet.disconnect();
+        } catch (error) {
+          console.log('Error disconnecting wallet:', error);
+        }
       }
     }
     
@@ -290,6 +358,36 @@ function App() {
           </nav>
         </div>
       </header>
+
+      {state.showWalletSelector && (
+        <div className="modal-overlay">
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Select Wallet</h2>
+              <button 
+                className="close-btn" 
+                onClick={() => setState(prev => ({ ...prev, showWalletSelector: false }))}
+              >
+                ×
+              </button>
+            </div>
+            <div className="wallet-options">
+              {state.availableWallets.map((wallet, index) => (
+                <button
+                  key={index}
+                  className="wallet-option"
+                  onClick={() => connectToWallet(wallet)}
+                >
+                  <span className="wallet-icon">
+                    {wallet.name().toLowerCase().includes('bearby') ? '🐻' : '🏛️'}
+                  </span>
+                  <span className="wallet-name">{wallet.name()}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {!state.isConnected && (
         <div className="quick-guide">
