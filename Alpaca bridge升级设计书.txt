@@ -1,0 +1,132 @@
+🦙 Alpaca Bridge 协议升级设计书 (Version 2.0)
+文档目的: 本设计书旨在为 Alpaca Bridge 协议提供一套全面的升级路线图，目标是将其从一个功能验证原型，转变为一个功能完备、安全健壮、且深度主题化的主网级去中心化借贷平台。
+
+核心理念: 强化Massa区块链的ASC（自主智能合约）特性，将“羊驼牧场”主题从视觉表层融入产品核心逻辑，打造一个真正自主、且富有情感连接的RWA（真实世界资产）借贷体验。
+
+第一部分：核心逻辑升级：从模拟到真实 (Mock -> Real)
+目标: 废除MockNFT，建立一套由预言机驱动的、标准化的RWA价值与风险评估体系。
+
+1.1. RWA资产标准化
+
+现状: MockNFT.ts 允许用户在铸造时随意定义资产价值与风险参数（PD/LGD）[cite: whxiswh/alpaca-l-b/Alpaca-L-B-3b1c87a4f0128dcf08820b55908d5cb6ef03413c/assembly/contracts/MockNFT.ts]。
+
+升级方案:
+
+定义RWA NFT标准: 创建一个新的NFT合约，遵循Massa的NFT标准，该NFT本身只记录资产的唯一标识（tokenId）和所有权信息。
+
+移除金融属性: NFT本身不再存储value, pd, lgd等易变的金融数据。
+
+1.2. 预言机（Oracle）功能强化
+
+现状: Oracle.ts 目前只提供单一的MAS价格 [cite: whxiswh/alpaca-l-b/Alpaca-L-B-3b1c87a4f0128dcf08820b55908d5cb6ef03413c/assembly/contracts/Oracle.ts]。
+
+升级方案:
+
+引入NFT估值模块: 在Oracle.ts中增加新函数，如 getNFTValuation(tokenId: u64): u64 和 updateNFTValuation(tokenId: u64, value: u64)。update函数应由受信任的外部数据提供商（通过治理授权的地址）调用。
+
+引入风险参数模块: 同样在Oracle.ts中增加 getNFTRiskProfile(tokenId: u64): RiskProfile 和 updateNFTRiskProfile(...) 函数，用于获取和更新资产的PD（违约概率）和LGD（违约损失率）。
+
+数据来源: 这些数据应来源于链下的专业信用评级和资产评估服务，通过预言机中继到链上。
+
+1.3. 改造CollateralVault.ts
+
+现状: depositNFT 直接从NFT合约读取价值 [cite: whxiswh/alpaca-l-b/Alpaca-L-B-3b1c87a4f0128dcf08820b55908d5cb6ef03413c/assembly/contracts/CollateralVault.ts]。
+
+升级方案:
+
+修改depositNFT函数，在接收到NFT后，不再信任NFT本身的数据，而是调用Oracle合约的getNFTValuation和getNFTRiskProfile来获取该tokenId的权威金融属性，并以此作为抵押品入库的依据。
+
+第二部分：自主智能合约（ASC）功能深化
+目标: 完善ASC的自动化逻辑，实现协议在无人干预下的可扩展、稳定运行。
+
+2.1. 利息累积到个人借贷头寸
+
+现状: LendingPool.ts中的accrueInterest ASC只更新了全局利率，未将利息分配到具体借款 [cite: whxiswh/alpaca-l-b/Alpaca-L-B-3b1c87a4f0128dcf08820b55908d5cb6ef03413c/assembly/contracts/LendingPool.ts]。
+
+升级方案:
+
+管理活跃头寸列表: 在LendingPool.ts中创建一个可存储的Array<u64>来追踪所有活跃的positionId。在borrow时添加ID，在repay（全额还款）或liquidate时移除ID。
+
+分配利息: 修改accrueInterest ASC，使其在更新全局利率后，遍历这个活跃头寸列表。为每个头寸计算应计利息 (borrowedAmount * interestRate * timeElapsed) 并累加到该头寸的accruedInterest字段中。
+
+2.2. 动态风险评估
+
+现状: RiskManager.ts中的evaluate ASC写死了循环次数 i <= 20，无法扩展 [cite: whxiswh/alpaca-l-b/Alpaca-L-B-3b1c87a4f0128dcf08820b55908d5cb6ef03413c/assembly/contracts/RiskManager.ts]。
+
+升级方案:
+
+读取动态列表: 修改evaluate函数，使其不再固定循环，而是通过跨合约调用，读取LendingPool.ts中维护的活跃头寸ID列表。
+
+分批处理: 如果活跃头寸过多可能导致Gas超限，可以设计ASC每次只处理列表的一部分（例如每次50个），并在下一次执行时从上次的断点继续。
+
+第三部分：构建完整的用户用例闭环
+目标: 打通从借贷到清算的每一个环节，确保资金流和资产所有权转移的完整性和正确性。
+
+3.1. 完善清算流程 (LiquidationEngine.ts)
+
+现状: finalizeAuction仅处理了拍卖结束的状态，但未处理资金流和NFT转移 [cite: whxiswh/alpaca-l-b/Alpaca-L-B-3b1c87a4f0128dcf08820b55908d5cb6ef03413c/assembly/contracts/LiquidationEngine.ts]。
+
+升级方案:
+
+资金清算: 在finalizeAuction中，当拍卖成功时，将拍卖所得（winningBid）：
+
+首先，向LendingPool合约发送消息，偿还该头寸的全部债务（本金+利息）。
+
+其次，剩余资金（如有）按治理设定的规则分配（例如，部分进入协议储备金，部分返还给被清算者）。
+
+NFT所有权转移: 调用CollateralVault的transferNFTOwnership(tokenId, newOwner)函数，将被清算的NFT所有权转移给拍卖赢家。
+
+更新头寸状态: 向LendingPool合约发送消息，将被清算的头寸标记为已关闭。
+
+3.2. 前端交互闭环 (LiquidationPanel.tsx)
+
+现状: 只有出价功能 [cite: whxiswh/alpaca-l-b/Alpaca-L-B-3b1c87a4f0128dcf08820b55908d5cb6ef03413c/front-end/src/components/LiquidationPanel.tsx]。
+
+升级方案:
+
+领取NFT: 为拍卖赢家提供一个“Claim NFT”按钮，调用LiquidationEngine的claimNFT函数（需要新增）。
+
+拍卖失败处理: 如果拍卖流拍，在UI上清晰展示，并告知用户该NFT的最终归属（例如，由协议金库持有）。
+
+第四部分：UI/UX与羊驼主题深度融合
+目标: 将“羊驼”主题从视觉装饰提升为产品的核心叙事，增强用户的情感连接和趣味性。
+
+4.1. 术语与世界观重塑
+
+核心概念映射:
+
+Lending Pool → The Pasture (牧场)
+
+Deposit → Plant Grass (种草)
+
+Borrow → Lead an Alpaca (领养羊驼)
+
+Collateral NFT → Alpaca's Halter (缰绳) 或直接就是 Your Alpaca
+
+Liquidation → Alpaca Roundup (围捕)
+
+UI文案统一: 在整个前端应用中，将DeFi术语替换为这套更生动的语言。
+
+4.2. 游戏化与视觉绑定
+
+动态生成羊驼形象:
+
+在CollateralManager.tsx的“Mint NFT”部分 [cite: whxiswh/alpaca-l-b/Alpaca-L-B-3b1c87a4f0128dcf08820b55908d5cb6ef03413c/front-end/src/components/CollateralManager.tsx]，根据用户输入的风险参数（PD/LGD），前端程序化地生成一个独特的像素羊驼形象。
+
+低风险: 白色、温顺的羊驼。
+
+高风险: 深色、毛发不羁、眼神犀利的羊驼。
+
+用户抵押NFT时，界面上显示的是这只独特的羊驼被“拴”在“牧场”里，而不是一串冰冷的ID。
+
+ASC过程可视化:
+
+在RiskMonitor.tsx [cite: whxiswh/alpaca-l-b/Alpaca-L-B-3b1c87a4f0128dcf08820b55908d5cb6ef03413c/front-end/src/components/RiskMonitor.tsx]，将ASC的定时执行描绘成动画：一个“牧羊犬机器人”每小时出来巡逻一圈，检查羊驼们的健康状况（LTV）。发现高风险羊驼时，会给它打上红色标记。
+
+利息累积过程可以表现为“牧场”定时下起“甘霖”，让“青草”茁壮成长。
+
+4.3. 微交互与品牌强化
+
+加载动画: 将全局的加载菊花图换成一个正在吃草或奔跑的像素羊驼。
+
+反馈与音效: 在关键操作成功时（如存款、借款），可以配上羊驼可爱的叫声或吃草的音效，并弹出“Your grass is growing!”或“Your new alpaca is happy!”等趣味提示。

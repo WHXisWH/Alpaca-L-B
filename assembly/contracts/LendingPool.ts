@@ -14,6 +14,8 @@ const USER_DEPOSITS_PREFIX = 'DEPOSIT_';
 const POSITION_PREFIX = 'POSITION_';
 const POSITION_COUNT_KEY = stringToBytes('POSITION_COUNT');
 const ACCRUAL_ACTIVE_KEY = stringToBytes('ACCRUAL_ACTIVE');
+const ACTIVE_POSITIONS_KEY = stringToBytes('ACTIVE_POSITIONS');
+const LAST_INTEREST_UPDATE_PREFIX = 'LAST_UPDATE_';
 
 export function constructor(argsData: StaticArray<u8>): void {
   assert(Context.isDeployingContract(), "Constructor can only be called during deployment");
@@ -33,6 +35,7 @@ export function constructor(argsData: StaticArray<u8>): void {
   Storage.set(CURRENT_INTEREST_RATE_KEY, u64ToBytes(BASE_INTEREST_RATE));
   Storage.set(POSITION_COUNT_KEY, u64ToBytes(0));
   Storage.set(ACCRUAL_ACTIVE_KEY, stringToBytes('false'));
+  Storage.set(ACTIVE_POSITIONS_KEY, stringToBytes(''));
 
   generateEvent('LendingPool deployed');
 }
@@ -156,6 +159,18 @@ export function borrow(argsData: StaticArray<u8>): StaticArray<u8> {
   Storage.set(positionKey, stringToBytes(positionData));
 
   Storage.set(POSITION_COUNT_KEY, u64ToBytes(positionId));
+  
+  const activePositions = bytesToString(Storage.get(ACTIVE_POSITIONS_KEY));
+  let updatedActivePositions: string;
+  if (activePositions == '') {
+    updatedActivePositions = positionId.toString();
+  } else {
+    updatedActivePositions = activePositions + ',' + positionId.toString();
+  }
+  Storage.set(ACTIVE_POSITIONS_KEY, stringToBytes(updatedActivePositions));
+  
+  const lastUpdateKey = stringToBytes(LAST_INTEREST_UPDATE_PREFIX + positionId.toString());
+  Storage.set(lastUpdateKey, u64ToBytes(Context.timestamp()));
 
   const totalBorrows = bytesToU64(Storage.get(TOTAL_BORROWS_KEY));
   Storage.set(TOTAL_BORROWS_KEY, u64ToBytes(totalBorrows + amount));
@@ -199,6 +214,19 @@ export function repay(argsData: StaticArray<u8>): void {
 
   const totalBorrows = bytesToU64(Storage.get(TOTAL_BORROWS_KEY));
   Storage.set(TOTAL_BORROWS_KEY, u64ToBytes(totalBorrows - borrowedAmount));
+  
+  const activePositions = bytesToString(Storage.get(ACTIVE_POSITIONS_KEY));
+  const positionList = activePositions.split(',');
+  let newActivePositions: string[] = [];
+  
+  for (let i = 0; i < positionList.length; i++) {
+    if (positionList[i] != positionId.toString()) {
+      newActivePositions.push(positionList[i]);
+    }
+  }
+  
+  const updatedActivePositions = newActivePositions.join(',');
+  Storage.set(ACTIVE_POSITIONS_KEY, stringToBytes(updatedActivePositions));
 
   if (repayAmount > totalDebt) {
     transferCoins(new Address(caller), repayAmount - totalDebt);
@@ -257,7 +285,44 @@ export function accrueInterest(_: StaticArray<u8>): void {
   Storage.set(CURRENT_INTEREST_RATE_KEY, u64ToBytes(interestRate));
   Storage.set(LAST_ACCRUAL_KEY, u64ToBytes(currentTime));
 
-  generateEvent('Interest accrued');
+  const activePositions = bytesToString(Storage.get(ACTIVE_POSITIONS_KEY));
+  if (activePositions != '') {
+    const positionList = activePositions.split(',');
+    
+    for (let i = 0; i < positionList.length; i++) {
+      const positionId = positionList[i];
+      if (positionId == '') continue;
+      
+      const positionKey = stringToBytes(POSITION_PREFIX + positionId);
+      if (!Storage.has(positionKey)) continue;
+      
+      const positionData = bytesToString(Storage.get(positionKey));
+      const parts = positionData.split(':');
+      
+      if (parts.length < 6 || parts[5] != 'true') continue;
+      
+      const borrowedAmount = U64.parseInt(parts[2]);
+      const currentAccruedInterest = U64.parseInt(parts[3]);
+      const lastUpdateKey = stringToBytes(LAST_INTEREST_UPDATE_PREFIX + positionId);
+      
+      let lastUpdate = currentTime;
+      if (Storage.has(lastUpdateKey)) {
+        lastUpdate = bytesToU64(Storage.get(lastUpdateKey));
+      }
+      
+      const timeElapsedForPosition = currentTime - lastUpdate;
+      if (timeElapsedForPosition > 0 && borrowedAmount > 0) {
+        const interestAccrued = (borrowedAmount * interestRate * timeElapsedForPosition) / (BASIS_POINTS * 31536000);
+        const newAccruedInterest = currentAccruedInterest + interestAccrued;
+        
+        const updatedPositionData = parts[0] + ':' + parts[1] + ':' + parts[2] + ':' + newAccruedInterest.toString() + ':' + parts[4] + ':' + parts[5];
+        Storage.set(positionKey, stringToBytes(updatedPositionData));
+        Storage.set(lastUpdateKey, u64ToBytes(currentTime));
+      }
+    }
+  }
+
+  generateEvent('Interest accrued for all positions');
 
   const cur_period = Context.currentPeriod();
   const cur_thread = Context.currentThread();
@@ -334,4 +399,12 @@ export function getUtilizationRate(_: StaticArray<u8>): StaticArray<u8> {
 
 export function isAccrualActive(_: StaticArray<u8>): StaticArray<u8> {
     return Storage.get(ACCRUAL_ACTIVE_KEY);
+}
+
+export function getActivePositions(_: StaticArray<u8>): StaticArray<u8> {
+    return Storage.get(ACTIVE_POSITIONS_KEY);
+}
+
+export function getPositionCount(_: StaticArray<u8>): StaticArray<u8> {
+    return Storage.get(POSITION_COUNT_KEY);
 }

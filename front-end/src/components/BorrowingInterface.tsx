@@ -103,32 +103,32 @@ export default function BorrowingInterface({ positions, onSuccess }: BorrowingIn
   const isTransacting = transactionState === TRANSACTION_STATES.PENDING;
 
   return (
-    <div className="card-grid">
-      <div className="stat-card">
-        <div className="section-title">📈 Borrow Against Collateral</div>
+    <div className="card-grid alpaca-borrowing">
+      <div className="stat-card alpaca-adoption">
+        <div className="section-title">🦙 Lead an Alpaca to Pasture</div>
         <p style={{ color: 'var(--text-secondary)', marginBottom: '20px' }}>
-          Borrow MAS by depositing RWA NFT collateral. Loan-to-value ratios are calculated based on PD/LGD risk models.
+          Use your trusted alpaca as a guide to lead new alpacas to the pasture. Each alpaca has different grazing capabilities based on their health and temperament.
         </p>
 
         {error && <div className="error-message">{error}</div>}
         
         {transactionState === TRANSACTION_STATES.SUCCESS && (
           <div className="success-message">
-            ✅ Transaction successful!
+            🦙 Success! Your guide alpaca has led new friends to the pasture!
           </div>
         )}
 
         <div className="input-group">
-          <label>Select Collateral NFT</label>
+          <label>Choose Your Guide Alpaca</label>
           <select
             value={selectedCollateral}
             onChange={(e) => setSelectedCollateral(e.target.value)}
             disabled={isTransacting}
           >
-            <option value="">Choose collateral...</option>
+            <option value="">Pick your trusted alpaca...</option>
             {positions.userCollaterals.map((collateral: any) => (
               <option key={collateral.id} value={collateral.id}>
-                NFT #{collateral.id} - {formatMAS(collateral.value)} MAS value
+                Alpaca #{collateral.id} - {formatMAS(collateral.value)} MAS grazing power
               </option>
             ))}
           </select>
@@ -136,45 +136,46 @@ export default function BorrowingInterface({ positions, onSuccess }: BorrowingIn
 
         {selectedCollateralData && (
           <div style={{ marginBottom: '20px', padding: '15px', background: 'var(--surface-light)', borderRadius: '8px' }}>
+            <h4 style={{ marginBottom: '15px', color: 'var(--primary)' }}>🦙 Your Selected Alpaca Profile</h4>
             <div className="position-details">
               <div className="detail-item">
-                <span className="detail-label">Collateral Value</span>
+                <span className="detail-label">🌟 Grazing Power</span>
                 <span className="detail-value">{formatMAS(selectedCollateralData.value)} MAS</span>
               </div>
               <div className="detail-item">
-                <span className="detail-label">PD (Probability of Default)</span>
+                <span className="detail-label">😴 Sleepiness Level</span>
                 <span className="detail-value">{(Number(selectedCollateralData.pd) / 100).toFixed(2)}%</span>
               </div>
               <div className="detail-item">
-                <span className="detail-label">LGD (Loss Given Default)</span>
+                <span className="detail-label">🤒 Stubbornness Factor</span>
                 <span className="detail-value">{(Number(selectedCollateralData.lgd) / 100).toFixed(2)}%</span>
               </div>
               <div className="detail-item">
-                <span className="detail-label">Max Borrow</span>
-                <span className="detail-value">{maxBorrowAmount.toFixed(6)} MAS</span>
+                <span className="detail-label">🦙 Max Alpacas to Lead</span>
+                <span className="detail-value">{maxBorrowAmount.toFixed(6)} MAS worth</span>
               </div>
             </div>
           </div>
         )}
 
         <div className="input-group">
-          <label>Borrow Amount (MAS)</label>
+          <label>New Alpacas to Lead (MAS worth)</label>
           <input
             type="number"
             min="0"
             step="0.000001"
             value={borrowAmount}
             onChange={(e) => setBorrowAmount(e.target.value)}
-            placeholder="Enter amount to borrow"
+            placeholder="How many alpacas to lead to pasture?"
             disabled={isTransacting || !selectedCollateral}
           />
           <div className="input-hint">
-            {selectedCollateralData ? `Maximum: ${maxBorrowAmount.toFixed(6)} MAS` : 'Select collateral first'}
+            {selectedCollateralData ? `🦙 Your guide can lead up to: ${maxBorrowAmount.toFixed(6)} MAS worth` : 'Choose your guide alpaca first'}
           </div>
         </div>
 
         <button
-          className="btn btn-primary"
+          className="btn btn-primary alpaca-lead-btn"
           onClick={handleBorrow}
           disabled={isTransacting || !selectedCollateral || !borrowAmount}
           style={{ width: '100%' }}
@@ -182,31 +183,31 @@ export default function BorrowingInterface({ positions, onSuccess }: BorrowingIn
           {isTransacting ? (
             <>
               <span className="loading-spinner"></span>
-              Processing...
+              🦙 Leading alpacas...
             </>
           ) : (
-            'Borrow'
+            <>🦙 Lead Alpacas <span className="traditional">(Borrow)</span></>
           )}
         </button>
       </div>
 
-      <div className="stat-card">
-        <div className="section-title">💸 Repay Loan</div>
+      <div className="stat-card alpaca-care">
+        <div className="section-title">🍃 Feed & Care for Alpacas</div>
         <p style={{ color: 'var(--text-secondary)', marginBottom: '20px' }}>
-          Repay your active loans to unlock collateral. Include accrued interest in your repayment.
+          Provide food and care for your alpacas to maintain their health. Well-fed alpacas can return to graze freely in the pasture.
         </p>
 
         <div className="input-group">
-          <label>Select Position to Repay</label>
+          <label>Select Alpaca Group to Care For</label>
           <select
             value={repayPositionId}
             onChange={(e) => setRepayPositionId(e.target.value)}
             disabled={isTransacting}
           >
-            <option value="">Choose position...</option>
+            <option value="">Choose your alpaca group...</option>
             {positions.userPositions.filter((p: any) => p.isActive).map((position: any) => (
               <option key={position.id} value={position.id}>
-                Position #{position.id} - NFT #{position.tokenId} ({formatMAS(position.borrowedAmount)} MAS)
+                Group #{position.id} - Led by Alpaca #{position.tokenId} ({formatMAS(position.borrowedAmount)} MAS worth)
               </option>
             ))}
           </select>
@@ -223,19 +224,19 @@ export default function BorrowingInterface({ positions, onSuccess }: BorrowingIn
               return (
                 <div className="position-details">
                   <div className="detail-item">
-                    <span className="detail-label">Principal</span>
-                    <span className="detail-value">{formatMAS(position.borrowedAmount)} MAS</span>
+                    <span className="detail-label">🦙 Alpacas Led</span>
+                    <span className="detail-value">{formatMAS(position.borrowedAmount)} MAS worth</span>
                   </div>
                   <div className="detail-item">
-                    <span className="detail-label">Accrued Interest</span>
+                    <span className="detail-label">🍃 Care & Feeding Costs</span>
                     <span className="detail-value">{formatMAS(position.accruedInterest)} MAS</span>
                   </div>
                   <div className="detail-item">
-                    <span className="detail-label">Total Debt</span>
+                    <span className="detail-label">💰 Total Care Required</span>
                     <span className="detail-value">{totalDebt.toFixed(6)} MAS</span>
                   </div>
                   <div className="detail-item">
-                    <span className="detail-label">Last Update</span>
+                    <span className="detail-label">🕐 Last Care Given</span>
                     <span className="detail-value">{formatTimestamp(position.lastUpdate)}</span>
                   </div>
                 </div>
@@ -246,7 +247,7 @@ export default function BorrowingInterface({ positions, onSuccess }: BorrowingIn
 
         <div className="input-group">
           <label>
-            Repay Amount (MAS)
+            Care & Feeding Amount (MAS)
             {repayPositionId && (
               <button
                 className="btn btn-small btn-secondary"
@@ -257,7 +258,7 @@ export default function BorrowingInterface({ positions, onSuccess }: BorrowingIn
                 disabled={isTransacting}
                 style={{ marginLeft: '10px', padding: '4px 8px' }}
               >
-                FULL
+                FULL CARE
               </button>
             )}
           </label>
@@ -267,13 +268,13 @@ export default function BorrowingInterface({ positions, onSuccess }: BorrowingIn
             step="0.000001"
             value={repayAmount}
             onChange={(e) => setRepayAmount(e.target.value)}
-            placeholder="Enter amount to repay"
+            placeholder="How much care to provide?"
             disabled={isTransacting || !repayPositionId}
           />
         </div>
 
         <button
-          className="btn btn-warning"
+          className="btn btn-warning alpaca-care-btn"
           onClick={handleRepay}
           disabled={isTransacting || !repayPositionId || !repayAmount}
           style={{ width: '100%' }}
@@ -281,21 +282,21 @@ export default function BorrowingInterface({ positions, onSuccess }: BorrowingIn
           {isTransacting ? (
             <>
               <span className="loading-spinner"></span>
-              Processing...
+              🍃 Caring for alpacas...
             </>
           ) : (
-            'Repay'
+            <>🍃 Care & Feed <span className="traditional">(Repay)</span></>
           )}
         </button>
       </div>
 
-      <div className="stat-card">
-        <div className="section-title">📋 Active Positions</div>
+      <div className="stat-card alpaca-herds">
+        <div className="section-title">🦙 Your Alpaca Herds</div>
         
         {positions.userPositions.length === 0 ? (
           <div className="empty-state">
-            <h3>No Active Positions</h3>
-            <p>You don't have any active borrow positions yet.</p>
+            <h3>🌄 No Active Herds</h3>
+            <p>You haven't led any alpacas to the pasture yet. Start by selecting a guide alpaca above!</p>
           </div>
         ) : (
           <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
@@ -306,33 +307,33 @@ export default function BorrowingInterface({ positions, onSuccess }: BorrowingIn
               const riskLevel = getRiskLevel(ltv);
               
               return (
-                <div key={position.id} className="position-card" style={{ marginBottom: '15px' }}>
+                <div key={position.id} className="position-card alpaca-herd-card" style={{ marginBottom: '15px' }}>
                   <div className="position-header">
-                    <span className="position-id">Position #{position.id}</span>
+                    <span className="position-id">🦙 Herd #{position.id}</span>
                     <span className={`position-status ${position.isActive ? 'status-active' : 'status-inactive'}`}>
-                      {position.isActive ? 'Active' : 'Closed'}
+                      {position.isActive ? '🌟 Grazing' : '😴 Resting'}
                     </span>
                   </div>
                   
                   <div className="position-details">
                     <div className="detail-item">
-                      <span className="detail-label">Collateral NFT</span>
+                      <span className="detail-label">🦙 Guide Alpaca</span>
                       <span className="detail-value">#{position.tokenId}</span>
                     </div>
                     <div className="detail-item">
-                      <span className="detail-label">Borrowed</span>
-                      <span className="detail-value">{formatMAS(position.borrowedAmount)} MAS</span>
+                      <span className="detail-label">🌿 Alpacas Led</span>
+                      <span className="detail-value">{formatMAS(position.borrowedAmount)} MAS worth</span>
                     </div>
                     <div className="detail-item">
-                      <span className="detail-label">Interest</span>
+                      <span className="detail-label">🍃 Care Costs</span>
                       <span className="detail-value">{formatMAS(position.accruedInterest)} MAS</span>
                     </div>
                     <div className="detail-item">
-                      <span className="detail-label">Total Debt</span>
+                      <span className="detail-label">💰 Total Care Needed</span>
                       <span className="detail-value">{totalDebt.toFixed(6)} MAS</span>
                     </div>
                     <div className="detail-item">
-                      <span className="detail-label">LTV</span>
+                      <span className="detail-label">📊 Herd Health</span>
                       <span className="detail-value">
                         <span className={`risk-indicator risk-${riskLevel.level}`}>
                           {ltv.toFixed(1)}%

@@ -84,39 +84,39 @@ export default function LendingInterface({ lending, onSuccess }: LendingInterfac
   const userBalance = formatMAS(lending.userDeposits);
 
   return (
-    <div className="card-grid">
-      <div className="stat-card">
-        <div className="section-title">💰 Deposit MAS</div>
+    <div className="card-grid alpaca-grassland">
+      <div className="stat-card grass-planting">
+        <div className="section-title">🌱 Plant Grass in the Pasture</div>
         <p style={{ color: 'var(--text-secondary)', marginBottom: '20px' }}>
-          Earn interest by providing liquidity to the lending pool. Your deposits help fund loans backed by RWA collateral.
+          Grow lush grass to feed the alpacas! Your grass provides nourishment for alpacas and earns you rewards as they graze.
         </p>
 
         {error && <div className="error-message">{error}</div>}
         
         {transactionState === TRANSACTION_STATES.SUCCESS && (
           <div className="success-message">
-            ✅ Transaction successful! Your deposit has been processed.
+            🌱 Great! Your grass seeds have been planted and are already sprouting!
           </div>
         )}
 
         <div className="input-group">
-          <label>Amount (MAS)</label>
+          <label>Grass Seeds (MAS)</label>
           <input
             type="number"
             min="0"
             step="0.000001"
             value={depositAmount}
             onChange={(e) => setDepositAmount(e.target.value)}
-            placeholder="Enter amount to deposit"
+            placeholder="How much grass do you want to plant?"
             disabled={isTransacting}
           />
           <div className="input-hint">
-            Minimum deposit: 1 MAS
+            🌾 Minimum planting: 1 MAS worth of seeds
           </div>
         </div>
 
         <button
-          className="btn btn-primary"
+          className="btn btn-primary grass-btn"
           onClick={handleDeposit}
           disabled={isTransacting || !depositAmount || lending.isLoading}
           style={{ width: '100%' }}
@@ -124,30 +124,30 @@ export default function LendingInterface({ lending, onSuccess }: LendingInterfac
           {isTransacting ? (
             <>
               <span className="loading-spinner"></span>
-              Processing...
+              🌱 Planting seeds...
             </>
           ) : (
-            'Deposit'
+            <>🌱 Plant Grass <span className="traditional">(Deposit)</span></>
           )}
         </button>
       </div>
 
-      <div className="stat-card">
-        <div className="section-title">💸 Withdraw MAS</div>
+      <div className="stat-card grass-harvesting">
+        <div className="section-title">🌾 Harvest Your Grass</div>
         <p style={{ color: 'var(--text-secondary)', marginBottom: '20px' }}>
-          Withdraw your deposited MAS plus accrued interest. Withdrawals are subject to available liquidity.
+          Harvest your grown grass plus the rewards from happy alpacas. Your harvest depends on how much grass is available in the pasture.
         </p>
 
         <div className="input-group">
           <label>
-            Amount (MAS)
+            Harvest Amount (MAS)
             <button
               className="btn btn-small btn-secondary"
               onClick={setMaxWithdraw}
               disabled={isTransacting}
               style={{ marginLeft: '10px', padding: '4px 8px' }}
             >
-              MAX
+              ALL
             </button>
           </label>
           <input
@@ -156,16 +156,16 @@ export default function LendingInterface({ lending, onSuccess }: LendingInterfac
             step="0.000001"
             value={withdrawAmount}
             onChange={(e) => setWithdrawAmount(e.target.value)}
-            placeholder="Enter amount to withdraw"
+            placeholder="How much grass to harvest?"
             disabled={isTransacting}
           />
           <div className="input-hint">
-            Available: {userBalance} MAS
+            🌱 Your grass field: {userBalance} MAS
           </div>
         </div>
 
         <button
-          className="btn btn-secondary"
+          className="btn btn-secondary harvest-btn"
           onClick={handleWithdraw}
           disabled={isTransacting || !withdrawAmount || lending.isLoading || parseFloat(userBalance) === 0}
           style={{ width: '100%' }}
@@ -173,40 +173,40 @@ export default function LendingInterface({ lending, onSuccess }: LendingInterfac
           {isTransacting ? (
             <>
               <span className="loading-spinner"></span>
-              Processing...
+              🌾 Harvesting...
             </>
           ) : (
-            'Withdraw'
+            <>🌾 Harvest Grass <span className="traditional">(Withdraw)</span></>
           )}
         </button>
       </div>
 
-      <div className="stat-card">
-        <div className="section-title">📊 Pool Information</div>
+      <div className="stat-card pasture-status">
+        <div className="section-title">🌾 Pasture Status</div>
         
         <div className="position-details">
           <div className="detail-item">
-            <span className="detail-label">Total Deposits</span>
+            <span className="detail-label">🌱 Total Grass Planted</span>
             <span className="detail-value">{formatMAS(lending.totalDeposits)} MAS</span>
           </div>
           <div className="detail-item">
-            <span className="detail-label">Total Borrows</span>
+            <span className="detail-label">🦙 Grass Being Grazed</span>
             <span className="detail-value">{formatMAS(lending.totalBorrows)} MAS</span>
           </div>
           <div className="detail-item">
-            <span className="detail-label">Utilization</span>
+            <span className="detail-label">📈 Grazing Activity</span>
             <span className="detail-value">{(Number(lending.utilizationRate) / 100).toFixed(2)}%</span>
           </div>
           <div className="detail-item">
-            <span className="detail-label">Current APY</span>
+            <span className="detail-label">🌿 Grass Growth Rate</span>
             <span className="detail-value">{(Number(lending.currentInterestRate) / 100).toFixed(2)}%</span>
           </div>
           <div className="detail-item">
-            <span className="detail-label">Your Deposits</span>
+            <span className="detail-label">🌾 Your Grass Field</span>
             <span className="detail-value">{userBalance} MAS</span>
           </div>
           <div className="detail-item">
-            <span className="detail-label">Available Liquidity</span>
+            <span className="detail-label">🟢 Fresh Grass Available</span>
             <span className="detail-value">
               {formatMAS((BigInt(lending.totalDeposits) - BigInt(lending.totalBorrows)).toString())} MAS
             </span>
@@ -214,12 +214,13 @@ export default function LendingInterface({ lending, onSuccess }: LendingInterfac
         </div>
 
         <div style={{ marginTop: '20px', padding: '15px', background: 'var(--surface-light)', borderRadius: '8px' }}>
-          <h4 style={{ marginBottom: '10px', color: 'var(--primary)' }}>How it works:</h4>
+          <h4 style={{ marginBottom: '10px', color: 'var(--primary)' }}>🦙 How the Alpaca Pasture Works:</h4>
           <ul style={{ fontSize: '14px', color: 'var(--text-secondary)', paddingLeft: '20px' }}>
-            <li>Deposit MAS to earn interest from borrowers</li>
-            <li>Interest rates adjust automatically based on utilization</li>
-            <li>Funds are secured by RWA NFT collateral</li>
-            <li>Autonomous liquidations protect your deposits</li>
+            <li>🌱 Plant grass seeds (MAS) to create lush pastures</li>
+            <li>🦙 Happy alpacas graze your grass and pay you rewards</li>
+            <li>📈 More grazing activity = higher grass growth rates</li>
+            <li>🛡️ Your grass is protected by alpaca collateral (RWA NFTs)</li>
+            <li>🤖 Autonomous shepherds ensure safe grazing</li>
           </ul>
         </div>
       </div>

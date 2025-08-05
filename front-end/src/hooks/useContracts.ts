@@ -6,6 +6,7 @@ export function useContracts(provider: any, addresses: Record<string, string>) {
     if (!provider || !addresses) {
       return {
         mockNFT: null,
+        rwaNFT: null,
         governance: null,
         oracle: null,
         collateralVault: null,
@@ -17,6 +18,7 @@ export function useContracts(provider: any, addresses: Record<string, string>) {
 
     return {
       mockNFT: addresses.mockNFT ? new massa.SmartContract(provider, addresses.mockNFT) : null,
+      rwaNFT: addresses.rwaNFT ? new massa.SmartContract(provider, addresses.rwaNFT) : null,
       governance: addresses.governance ? new massa.SmartContract(provider, addresses.governance) : null,
       oracle: addresses.oracle ? new massa.SmartContract(provider, addresses.oracle) : null,
       collateralVault: addresses.collateralVault ? new massa.SmartContract(provider, addresses.collateralVault) : null,

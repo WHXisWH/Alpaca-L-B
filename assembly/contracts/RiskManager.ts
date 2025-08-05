@@ -99,27 +99,39 @@ export function evaluate(_: StaticArray<u8>): void {
 
   let highRiskPositionsList: string[] = [];
 
-  for (let i: u64 = 1; i <= 20; i++) {
-    const positionKey = stringToBytes('POSITION_' + i.toString());
-    if (Storage.hasOf(lendingPoolAddress, positionKey)) {
-      const positionData = bytesToString(Storage.getOf(lendingPoolAddress, positionKey));
-      const parts = positionData.split(':');
+  const activePositionsKey = stringToBytes('ACTIVE_POSITIONS');
+  if (Storage.hasOf(lendingPoolAddress, activePositionsKey)) {
+    const activePositionsData = bytesToString(Storage.getOf(lendingPoolAddress, activePositionsKey));
+    
+    if (activePositionsData != '') {
+      const activePositions = activePositionsData.split(',');
+      
+      for (let i = 0; i < activePositions.length; i++) {
+        const positionId = activePositions[i];
+        if (positionId == '') continue;
+        
+        const positionKey = stringToBytes('POSITION_' + positionId);
+        if (Storage.hasOf(lendingPoolAddress, positionKey)) {
+          const positionData = bytesToString(Storage.getOf(lendingPoolAddress, positionKey));
+          const parts = positionData.split(':');
 
-      if (parts.length >= 6 && parts[5] == 'true') {
-        const tokenId = U64.parseInt(parts[1]);
-        const borrowedAmount = U64.parseInt(parts[2]);
-        const accruedInterest = U64.parseInt(parts[3]);
-        const totalDebt = borrowedAmount + accruedInterest;
+          if (parts.length >= 6 && parts[5] == 'true') {
+            const tokenId = U64.parseInt(parts[1]);
+            const borrowedAmount = U64.parseInt(parts[2]);
+            const accruedInterest = U64.parseInt(parts[3]);
+            const totalDebt = borrowedAmount + accruedInterest;
 
-        const valueKey = stringToBytes('NFT_VALUE_' + tokenId.toString());
-        if (Storage.hasOf(vaultAddress, valueKey)) {
-          const collateralValue = bytesToU64(Storage.getOf(vaultAddress, valueKey));
+            const valueKey = stringToBytes('NFT_VALUE_' + tokenId.toString());
+            if (Storage.hasOf(vaultAddress, valueKey)) {
+              const collateralValue = bytesToU64(Storage.getOf(vaultAddress, valueKey));
 
-          if (collateralValue > 0) {
-            const currentLTV = (totalDebt * BASIS_POINTS) / collateralValue;
-            const liquidationThreshold: u64 = 8500;
-            if (currentLTV > liquidationThreshold) {
-              highRiskPositionsList.push(i.toString());
+              if (collateralValue > 0) {
+                const currentLTV = (totalDebt * BASIS_POINTS) / collateralValue;
+                const liquidationThreshold: u64 = 8500;
+                if (currentLTV > liquidationThreshold) {
+                  highRiskPositionsList.push(positionId);
+                }
+              }
             }
           }
         }

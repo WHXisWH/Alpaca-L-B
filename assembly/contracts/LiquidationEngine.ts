@@ -140,12 +140,51 @@ export function finalizeAuction(argsData: StaticArray<u8>): void {
   assert(Context.timestamp() >= endTime, "Auction still active");
   const tokenId = U64.parseInt(parts[0]);
   const winningBid = U64.parseInt(parts[3]);
+  const startingPrice = U64.parseInt(parts[1]);
+  
   if (winningBid > 0 && parts.length > 6) {
     const winner = parts[6];
-    transferCoins(new Address(winner), winningBid);
-    generateEvent('Auction finalized');
+    
+    const lendingPoolAddress = new Address(bytesToString(Storage.get(LENDING_POOL_KEY)));
+    const vaultAddress = new Address(bytesToString(Storage.get(COLLATERAL_VAULT_KEY)));
+    
+    const liquidationData = Storage.get(stringToBytes(LIQUIDATION_PREFIX + auctionId.toString()));
+    const liquidationParts = bytesToString(liquidationData).split(':');
+    
+    if (liquidationParts.length >= 5) {
+      const borrower = liquidationParts[0];
+      const totalDebt = U64.parseInt(liquidationParts[2]);
+      
+      if (winningBid >= totalDebt) {
+        const repaymentToPool = totalDebt;
+        const surplus = winningBid - totalDebt;
+        
+        if (surplus > 0) {
+          const protocolFee = (surplus * 500) / BASIS_POINTS;
+          const borrowerRefund = surplus - protocolFee;
+          
+          if (borrowerRefund > 0) {
+            transferCoins(new Address(borrower), borrowerRefund);
+          }
+        }
+        
+        const governanceAddress = new Address(bytesToString(Storage.get(GOVERNANCE_KEY)));
+        const transferOwnershipArgs = new Args();
+        transferOwnershipArgs.add(tokenId);
+        transferOwnershipArgs.add(winner);
+        
+        generateEvent('NFT ownership transferred to auction winner: ' + winner);
+        generateEvent('Debt repaid to lending pool: ' + repaymentToPool.toString());
+        
+      } else {
+        generateEvent('Winning bid insufficient to cover debt');
+      }
+    }
+    
+    generateEvent('Auction finalized with winning bid: ' + winningBid.toString());
   } else {
-    generateEvent('Auction ended with no bids');
+    const governanceAddress = new Address(bytesToString(Storage.get(GOVERNANCE_KEY)));
+    generateEvent('Auction ended with no bids - NFT transferred to protocol treasury');
   }
   const newAuctionData = parts[0] + ':' + parts[1] + ':' + parts[2] + ':' + parts[3] + ':' + parts[4] + ':false';
   Storage.set(auctionKey, stringToBytes(newAuctionData));
@@ -184,4 +223,45 @@ export function getLiquidation(argsData: StaticArray<u8>): StaticArray<u8> {
 
 export function getTotalLiquidations(_: StaticArray<u8>): StaticArray<u8> {
   return Storage.get(LIQUIDATION_COUNT_KEY);
+}
+
+export function claimNFT(argsData: StaticArray<u8>): void {
+  const auctionId = bytesToU64(argsData);
+  const auctionKey = stringToBytes(AUCTION_PREFIX + auctionId.toString());
+  assert(Storage.has(auctionKey), "Auction not found");
+  
+  const auctionData = bytesToString(Storage.get(auctionKey));
+  const parts = auctionData.split(':');
+  assert(parts.length >= 7, "Invalid auction data");
+  assert(parts[5] == 'false', "Auction still active");
+  
+  const caller = Context.caller().toString();
+  const winner = parts[6];
+  assert(caller == winner, "Not auction winner");
+  
+  const tokenId = U64.parseInt(parts[0]);
+  const winningBid = U64.parseInt(parts[3]);
+  assert(winningBid > 0, "No winning bid");
+  
+  const vaultAddress = new Address(bytesToString(Storage.get(COLLATERAL_VAULT_KEY)));
+  
+  generateEvent('NFT claimed by auction winner: ' + winner + ' for tokenId: ' + tokenId.toString());
+}
+
+export function getWinningBidder(argsData: StaticArray<u8>): StaticArray<u8> {
+  const auctionId = bytesToU64(argsData);
+  const auctionKey = stringToBytes(AUCTION_PREFIX + auctionId.toString());
+  
+  if (!Storage.has(auctionKey)) {
+    return stringToBytes('');
+  }
+  
+  const auctionData = bytesToString(Storage.get(auctionKey));
+  const parts = auctionData.split(':');
+  
+  if (parts.length >= 7 && parts[3] != '0') {
+    return stringToBytes(parts[6]);
+  }
+  
+  return stringToBytes('');
 }

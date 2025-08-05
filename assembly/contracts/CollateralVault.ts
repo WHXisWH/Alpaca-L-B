@@ -3,6 +3,7 @@ import { stringToBytes, bytesToString, u64ToBytes, bytesToU64, Args } from '@mas
 
 const GOVERNANCE_KEY = stringToBytes('GOVERNANCE');
 const NFT_CONTRACT_KEY = stringToBytes('NFT_CONTRACT');
+const ORACLE_CONTRACT_KEY = stringToBytes('ORACLE_CONTRACT');
 const DEPOSITED_NFT_PREFIX = 'DEPOSITED_';
 const NFT_OWNER_PREFIX = 'NFT_OWNER_';
 const NFT_VALUE_PREFIX = 'NFT_VALUE_';
@@ -17,9 +18,11 @@ export function constructor(argsData: StaticArray<u8>): void {
   const args = new Args(argsData);
   const governanceAddress = args.nextString().unwrap();
   const nftContractAddress = args.nextString().unwrap();
+  const oracleContractAddress = args.nextString().unwrap();
   
   Storage.set(GOVERNANCE_KEY, stringToBytes(governanceAddress));
   Storage.set(NFT_CONTRACT_KEY, stringToBytes(nftContractAddress));
+  Storage.set(ORACLE_CONTRACT_KEY, stringToBytes(oracleContractAddress));
   Storage.set(TOTAL_SHARES_KEY, u64ToBytes(0));
   
   generateEvent('CollateralVault deployed');
@@ -33,6 +36,7 @@ export function depositNFT(argsData: StaticArray<u8>): StaticArray<u8> {
   const tokenId = bytesToU64(argsData);
   const caller = Context.caller().toString();
   const nftContract = new Address(bytesToString(Storage.get(NFT_CONTRACT_KEY)));
+  const oracleContract = new Address(bytesToString(Storage.get(ORACLE_CONTRACT_KEY)));
   
   const ownerResult = Storage.getOf(nftContract, stringToBytes('OWNER_' + tokenId.toString()));
   const owner = bytesToString(ownerResult);
@@ -41,9 +45,9 @@ export function depositNFT(argsData: StaticArray<u8>): StaticArray<u8> {
   const depositedKey = stringToBytes(DEPOSITED_NFT_PREFIX + tokenId.toString());
   assert(!Storage.has(depositedKey), "NFT already deposited");
   
-  const valueResult = Storage.getOf(nftContract, stringToBytes('VALUE_' + tokenId.toString()));
-  const pdResult = Storage.getOf(nftContract, stringToBytes('PD_' + tokenId.toString()));
-  const lgdResult = Storage.getOf(nftContract, stringToBytes('LGD_' + tokenId.toString()));
+  const valueResult = Storage.getOf(oracleContract, stringToBytes('NFT_VAL_' + tokenId.toString()));
+  const pdResult = Storage.getOf(oracleContract, stringToBytes('NFT_PD_' + tokenId.toString()));
+  const lgdResult = Storage.getOf(oracleContract, stringToBytes('NFT_LGD_' + tokenId.toString()));
   
   const value = bytesToU64(valueResult);
   const pd = bytesToU64(pdResult);
@@ -172,4 +176,39 @@ export function getUserShares(argsData: StaticArray<u8>): StaticArray<u8> {
 
 export function getTotalShares(_: StaticArray<u8>): StaticArray<u8> {
   return Storage.get(TOTAL_SHARES_KEY);
+}
+
+export function setOracleContract(argsData: StaticArray<u8>): void {
+  const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == governanceAddress, "Only governance can set oracle contract");
+  
+  const oracleAddress = bytesToString(argsData);
+  Storage.set(ORACLE_CONTRACT_KEY, stringToBytes(oracleAddress));
+  
+  generateEvent('Oracle contract address updated');
+}
+
+export function refreshNFTData(argsData: StaticArray<u8>): void {
+  const tokenId = bytesToU64(argsData);
+  const depositedKey = stringToBytes(DEPOSITED_NFT_PREFIX + tokenId.toString());
+  assert(Storage.has(depositedKey), "NFT not deposited");
+  
+  const oracleContract = new Address(bytesToString(Storage.get(ORACLE_CONTRACT_KEY)));
+  
+  const valueResult = Storage.getOf(oracleContract, stringToBytes('NFT_VAL_' + tokenId.toString()));
+  const pdResult = Storage.getOf(oracleContract, stringToBytes('NFT_PD_' + tokenId.toString()));
+  const lgdResult = Storage.getOf(oracleContract, stringToBytes('NFT_LGD_' + tokenId.toString()));
+  
+  const value = bytesToU64(valueResult);
+  const pd = bytesToU64(pdResult);
+  const lgd = bytesToU64(lgdResult);
+  
+  if (value > 0) {
+    Storage.set(stringToBytes(NFT_VALUE_PREFIX + tokenId.toString()), u64ToBytes(value));
+    Storage.set(stringToBytes(NFT_PD_PREFIX + tokenId.toString()), u64ToBytes(pd));
+    Storage.set(stringToBytes(NFT_LGD_PREFIX + tokenId.toString()), u64ToBytes(lgd));
+    
+    generateEvent('NFT data refreshed for tokenId ' + tokenId.toString());
+  }
 }
