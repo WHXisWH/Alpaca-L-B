@@ -89,7 +89,8 @@ async function main() {
   try {
     const vaultConstructorArgs = new massa.Args()
       .addString(addresses.governance)
-      .addString(addresses.mockNFT);
+      .addString(addresses.mockNFT)
+      .addString(addresses.oracle);
     vaultContract = await massa.SmartContract.deploy(
       provider,
       vaultBytecode,

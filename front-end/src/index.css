@@ -1061,3 +1061,43 @@ body {
   transform: translateY(-3px);
   box-shadow: 0 8px 25px rgba(144, 238, 144, 0.4);
 }
+
+.card-icon-wrapper {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 20px;
+  height: 80px;
+}
+
+.card-icon {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.footer-links {
+  display: flex;
+  justify-content: center;
+  gap: 30px;
+  margin-top: 20px;
+  margin-bottom: 20px;
+}
+
+.footer-links a {
+  color: var(--text-secondary);
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+.footer-links a:hover {
+  color: var(--primary);
+}
+
+.dashboard-card-icon {
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 15px;
+  display: block;
+  object-fit: contain;
+}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import * as massa from '@massalabs/massa-web3';
 import { getWallets } from '@massalabs/wallet-provider';
+import { Toaster } from 'react-hot-toast';
 import Dashboard from './components/Dashboard';
 import { loadAddresses } from './utils/massa';
 
@@ -331,7 +332,7 @@ function App() {
           <nav className="nav">
             <div className="logo">
               <div className="alpaca-icon">
-                  <img src="/alpaca-icon.png" alt="Alpaca" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src="/alpaca-icon.webp" alt="Alpaca" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
               Alpaca Bridge
             </div>
@@ -433,7 +434,7 @@ function App() {
                 maxWidth: '800px',
                 boxShadow: '0 20px 60px rgba(139, 115, 85, 0.2)'
               }}>
-                  <img src="/alpaca-hero.png" alt="Alpaca" style={{ 
+                  <img src="/alpaca-hero.webp" alt="Alpaca" style={{ 
                     position: 'absolute', 
                     top: '-20px', 
                     right: '-20px', 
@@ -464,18 +465,27 @@ function App() {
                   {state.isLoading ? '🔄 Loading...' : '🚀 Get Started'}
                 </button>
                 
-                <div className="stats-grid" style={{ marginTop: '60px' }}>
+                <div className="stats-grid" style={{ marginTop: '60px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px' }}>
                   <div className="stat-card alpaca-pattern">
+                    <div className="card-icon-wrapper">
+                        <img src="/icon-rwa.webp" alt="RWA Collateral" className="card-icon"/>
+                    </div>
                     <div className="stat-label">🏭 RWA Collateral</div>
                     <div className="stat-value alpaca-accent">Enterprise NFTs</div>
                     <div className="stat-change">Receivables • Bills • Invoices</div>
                   </div>
                   <div className="stat-card alpaca-pattern">
+                    <div className="card-icon-wrapper">
+                        <img src="/icon-asc.webp" alt="Autonomous Operation" className="card-icon"/>
+                    </div>
                     <div className="stat-label">🤖 Autonomous Operation</div>
                     <div className="stat-value alpaca-accent">ASC Powered</div>
                     <div className="stat-change">Self-executing • No bots needed</div>
                   </div>
                   <div className="stat-card alpaca-pattern">
+                    <div className="card-icon-wrapper">
+                        <img src="/icon-risk.webp" alt="Risk Management" className="card-icon"/>
+                    </div>
                     <div className="stat-label">⚖️ Risk Management</div>
                     <div className="stat-value alpaca-accent">PD/LGD Model</div>
                     <div className="stat-change">Dynamic LTV • Auto liquidation</div>
@@ -494,11 +504,23 @@ function App() {
       </main>
 
       <footer className="footer">
+        <Toaster 
+          position="bottom-right"
+          toastOptions={{
+            style: {
+              background: '#333',
+              color: '#fff',
+            },
+          }}
+        />
         <div className="container">
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-            <span style={{ fontSize: '20px' }}>🦙</span>
-            <p>&copy; 2024 Alpaca Bridge. Built on Massa blockchain with Autonomous Smart Contracts.</p>
-              <img src="/alpaca-small.png" alt="Alpaca" style={{ width: '24px', height: '24px' }} />
+            <p>&copy; 2024 Alpaca Bridge. Built on Massa.</p>
+          </div>
+          <div className="footer-links">
+            <a href="#" target="_blank" rel="noopener noreferrer">Documentation</a>
+            <a href="#" target="_blank" rel="noopener noreferrer">Community</a>
+            <a href="#" target="_blank" rel="noopener noreferrer">Source Code</a>
           </div>
           
           <div style={{ 
@@ -507,7 +529,7 @@ function App() {
             color: 'var(--text-secondary)',
             textAlign: 'center' 
           }}>
-            <p>🌾 Grassland-to-DeFi: Where Alpacas Meet Autonomous Finance 🌾</p>
+            <p>Autonomous Finance on the Decentralized Web</p>
           </div>
         </div>
       </footer>

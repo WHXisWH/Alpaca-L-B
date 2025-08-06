@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'react-hot-toast';
 import * as massa from '@massalabs/massa-web3';
 import { useContracts } from '../hooks/useContracts';
 import { formatMAS, getErrorMessage, validateAmount, formatTimestamp } from '../utils/massa';
@@ -232,20 +233,12 @@ export default function LiquidationPanel({ provider, addresses }: LiquidationPan
       );
 
       await operation.waitFinalExecution();
-      setTransactionState(TRANSACTION_STATES.SUCCESS);
+      toast.success('Auction finalized successfully!');
       await refreshData();
-      
-      setTimeout(() => {
-        setTransactionState(TRANSACTION_STATES.IDLE);
-      }, 3000);
     } catch (err) {
-      setError(getErrorMessage(err));
-      setTransactionState(TRANSACTION_STATES.ERROR);
-      
-      setTimeout(() => {
-        setTransactionState(TRANSACTION_STATES.IDLE);
-      }, 5000);
+      toast.error(getErrorMessage(err));
     }
+    setTransactionState(TRANSACTION_STATES.IDLE);
   };
 
   const isTransacting = transactionState === TRANSACTION_STATES.PENDING;

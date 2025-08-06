@@ -408,3 +408,47 @@ export function getActivePositions(_: StaticArray<u8>): StaticArray<u8> {
 export function getPositionCount(_: StaticArray<u8>): StaticArray<u8> {
     return Storage.get(POSITION_COUNT_KEY);
 }
+
+export function closePositionFromLiquidation(argsData: StaticArray<u8>): void {
+  const liquidationEngineAddress = new Address(bytesToString(Storage.get(stringToBytes("LIQUIDATION_ENGINE"))));
+  assert(Context.caller() == liquidationEngineAddress, "Only liquidation engine can close position");
+
+  const args = new Args(argsData);
+  const positionId = args.nextU64().unwrap();
+  const repaymentAmount = args.nextU64().unwrap();
+
+  const positionKey = stringToBytes(POSITION_PREFIX + positionId.toString());
+  assert(Storage.has(positionKey), "Position not found");
+
+  const positionData = bytesToString(Storage.get(positionKey));
+  const parts = positionData.split(':');
+  assert(parts.length >= 6, "Invalid position data");
+  assert(parts[5] == 'true', "Position not active");
+
+  const borrowedAmount = U64.parseInt(parts[2]);
+
+  // Mark position as inactive
+  Storage.set(positionKey, stringToBytes(parts[0] + ':' + parts[1] + ':0:0:' + parts[4] + ':false'));
+
+  // Update total borrows
+  const totalBorrows = bytesToU64(Storage.get(TOTAL_BORROWS_KEY));
+  Storage.set(TOTAL_BORROWS_KEY, u64ToBytes(totalBorrows - borrowedAmount));
+
+  // Remove from active positions list
+  const activePositions = bytesToString(Storage.get(ACTIVE_POSITIONS_KEY));
+  const positionList = activePositions.split(',');
+  let newActivePositions: string[] = [];
+  for (let i = 0; i < positionList.length; i++) {
+    if (positionList[i] != positionId.toString()) {
+      newActivePositions.push(positionList[i]);
+    }
+  }
+  const updatedActivePositions = newActivePositions.join(',');
+  Storage.set(ACTIVE_POSITIONS_KEY, stringToBytes(updatedActivePositions));
+
+  // Add repayment to total deposits (liquidity)
+  const totalDeposits = bytesToU64(Storage.get(TOTAL_DEPOSITS_KEY));
+  Storage.set(TOTAL_DEPOSITS_KEY, u64ToBytes(totalDeposits + repaymentAmount));
+
+  generateEvent('Position closed from liquidation');
+}

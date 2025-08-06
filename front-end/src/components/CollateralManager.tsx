@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { toast } from 'react-hot-toast';
 import * as massa from '@massalabs/massa-web3';
 import { useContracts } from '../hooks/useContracts';
 import { formatMAS, getErrorMessage, validateAmount } from '../utils/massa';
@@ -215,25 +216,17 @@ export default function CollateralManager({ positions, provider, addresses, onSu
 
     try {
       await positions.withdrawNFT(parseInt(withdrawTokenId));
-      setTransactionState(TRANSACTION_STATES.SUCCESS);
+      toast.success(`NFT #${withdrawTokenId} withdrawn successfully!`);
       setWithdrawTokenId('');
       
       setTimeout(() => {
         fetchMyNFTs(false);
         onSuccess();
       }, 2000);
-      
-      setTimeout(() => {
-        setTransactionState(TRANSACTION_STATES.IDLE);
-      }, 3000);
     } catch (err) {
-      setError(getErrorMessage(err));
-      setTransactionState(TRANSACTION_STATES.ERROR);
-      
-      setTimeout(() => {
-        setTransactionState(TRANSACTION_STATES.IDLE);
-      }, 5000);
+      toast.error(getErrorMessage(err));
     }
+    setTransactionState(TRANSACTION_STATES.IDLE);
   };
 
   const isTransacting = transactionState === TRANSACTION_STATES.PENDING;
@@ -504,8 +497,9 @@ export default function CollateralManager({ positions, provider, addresses, onSu
         
         {positions.userCollaterals.length === 0 ? (
           <div className="empty-state">
+            <span className="empty-state-icon">🏦</span>
             <h3>No Deposited Collateral</h3>
-            <p>You haven't deposited any NFT collateral yet.</p>
+            <p>You haven't deposited any NFT collateral yet. Deposit one to enable borrowing.</p>
           </div>
         ) : (
           <div style={{ maxHeight: '400px', overflowY: 'auto' }}>

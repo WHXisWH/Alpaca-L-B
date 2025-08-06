@@ -1,4 +1,4 @@
-import { generateEvent, Storage, Context, transferCoins, Address } from '@massalabs/massa-as-sdk';
+import { generateEvent, Storage, Context, transferCoins, Address, sendMessage } from '@massalabs/massa-as-sdk';
 import { stringToBytes, bytesToString, u64ToBytes, bytesToU64, Args } from '@massalabs/as-types';
 import { LIQUIDATION_PENALTY, BASIS_POINTS } from '../utils/Constants';
 
@@ -154,13 +154,26 @@ export function finalizeAuction(argsData: StaticArray<u8>): void {
     if (liquidationParts.length >= 5) {
       const borrower = liquidationParts[0];
       const totalDebt = U64.parseInt(liquidationParts[2]);
+      const positionId = U64.parseInt(liquidationParts[1]); // Assuming tokenId is used as positionId, adjust if different
       
       if (winningBid >= totalDebt) {
         const repaymentToPool = totalDebt;
         const surplus = winningBid - totalDebt;
         
+        // Close position in LendingPool
+        const closePositionArgs = new Args();
+        closePositionArgs.add(positionId);
+        closePositionArgs.add(repaymentToPool);
+        sendMessage(lendingPoolAddress, 'closePositionFromLiquidation', 0, 0, 0, 0, 100_000_000, 0, 0, closePositionArgs.serialize());
+
+        // Transfer NFT ownership
+        const transferOwnershipArgs = new Args();
+        transferOwnershipArgs.add(tokenId);
+        transferOwnershipArgs.add(winner);
+        sendMessage(vaultAddress, 'transferOwnership', 0, 0, 0, 0, 100_000_000, 0, 0, transferOwnershipArgs.serialize());
+
         if (surplus > 0) {
-          const protocolFee = (surplus * 500) / BASIS_POINTS;
+          const protocolFee = (surplus * 500) / BASIS_POINTS; // 5% protocol fee
           const borrowerRefund = surplus - protocolFee;
           
           if (borrowerRefund > 0) {
@@ -168,13 +181,7 @@ export function finalizeAuction(argsData: StaticArray<u8>): void {
           }
         }
         
-        const governanceAddress = new Address(bytesToString(Storage.get(GOVERNANCE_KEY)));
-        const transferOwnershipArgs = new Args();
-        transferOwnershipArgs.add(tokenId);
-        transferOwnershipArgs.add(winner);
-        
-        generateEvent('NFT ownership transferred to auction winner: ' + winner);
-        generateEvent('Debt repaid to lending pool: ' + repaymentToPool.toString());
+        generateEvent('Auction finalized, debt repaid, and NFT transferred to ' + winner);
         
       } else {
         generateEvent('Winning bid insufficient to cover debt');

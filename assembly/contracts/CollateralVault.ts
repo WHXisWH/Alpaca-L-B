@@ -212,3 +212,32 @@ export function refreshNFTData(argsData: StaticArray<u8>): void {
     generateEvent('NFT data refreshed for tokenId ' + tokenId.toString());
   }
 }
+
+export function transferOwnership(argsData: StaticArray<u8>): void {
+  const liquidationEngineAddress = new Address(bytesToString(Storage.get(stringToBytes("LIQUIDATION_ENGINE"))));
+  assert(Context.caller() == liquidationEngineAddress, "Only liquidation engine can transfer ownership");
+
+  const args = new Args(argsData);
+  const tokenId = args.nextU64().unwrap();
+  const newOwner = args.nextString().unwrap();
+
+  const ownerKey = stringToBytes(NFT_OWNER_PREFIX + tokenId.toString());
+  assert(Storage.has(ownerKey), "NFT not found in vault");
+  const oldOwner = bytesToString(Storage.get(ownerKey));
+
+  const shareKey = stringToBytes(SHARE_TOKEN_PREFIX + oldOwner + '_' + tokenId.toString());
+  assert(Storage.has(shareKey), "Share token not found for old owner");
+  const shares = bytesToU64(Storage.get(shareKey));
+
+  // Remove shares from old owner
+  Storage.del(shareKey);
+
+  // Set new owner
+  Storage.set(ownerKey, stringToBytes(newOwner));
+
+  // Add shares to new owner
+  const newShareKey = stringToBytes(SHARE_TOKEN_PREFIX + newOwner + '_' + tokenId.toString());
+  Storage.set(newShareKey, u64ToBytes(shares));
+
+  generateEvent('NFT ownership transferred');
+}
