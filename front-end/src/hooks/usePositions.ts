@@ -99,10 +99,10 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
 
             if (owner === userAddress) {
               const [valueResult, pdResult, lgdResult] = await Promise.all([
-                contracts.collateralVault.read('getNFTValue', new massa.Args().addU64(BigInt(i)).serialize()),
-                contracts.collateralVault.read('getNFTPD', new massa.Args().addU64(BigInt(i)).serialize()),
-                contracts.collateralVault.read('getNFTLGD', new massa.Args().addU64(BigInt(i)).serialize())
-              ]);
+              contracts.oracle.read('getNFTValuation', new massa.Args().addU64(BigInt(i)).serialize()),
+              contracts.oracle.read('getNFTPD', new massa.Args().addU64(BigInt(i)).serialize()),
+              contracts.oracle.read('getNFTLGD', new massa.Args().addU64(BigInt(i)).serialize())
+            ]);
 
               const value = new massa.Args(valueResult.value).nextU64();
               const pd = new massa.Args(pdResult.value).nextU64();
@@ -145,29 +145,6 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
     const interval = setInterval(refreshData, REFRESH_INTERVALS.NORMAL);
     return () => clearInterval(interval);
   }, [refreshData]);
-
-  const mintNFT = useCallback(async (value: string, pd: string, lgd: string): Promise<bigint> => {
-    if (!contracts.mockNFT || !provider) throw new Error('MockNFT contract not available');
-  
-    const maturity = Math.floor(Date.now() / 1000) + 365 * 24 * 3600;
-    const userAddress = provider.address || provider.getAddress?.() || provider.account?.address;
-    
-    const operation = await contracts.mockNFT.call(
-      'mint',
-      new massa.Args()
-        .addString(userAddress)
-        .addU64(BigInt(value))
-        .addU64(BigInt(pd))
-        .addU64(BigInt(lgd))
-        .addU64(BigInt(maturity))
-        .serialize()
-    );
-  
-    await operation.waitFinalExecution();
-    await refreshData();
-    
-    return BigInt(1);
-  }, [contracts.mockNFT, provider, refreshData]);
 
   const depositNFT = useCallback(async (tokenId: number): Promise<void> => {
     if (!contracts.collateralVault) throw new Error('Collateral vault contract not available');
@@ -225,13 +202,39 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
     await refreshData();
   }, [contracts.lendingPool, refreshData]);
 
+  const mintNFT = useCallback(async (metadata: string, value: string, pd: string, lgd: string): Promise<bigint> => {
+    if (!contracts.rwaNFT || !provider) throw new Error('NFT Contract or provider not available');
+
+    const userAddress = provider.address || provider.getAddress?.() || provider.account?.address;
+
+    const mintArgs = new massa.Args()
+      .addString(userAddress)
+      .addString(metadata)
+      .addU64(BigInt(value))
+      .addU64(BigInt(pd))
+      .addU64(BigInt(lgd));
+
+    const operation = await contracts.rwaNFT.call('mint', mintArgs.serialize());
+
+    await operation.waitFinalExecution();
+
+    // Since the new token ID is not returned directly, we fetch it from NEXT_ID
+    const nextIdResult = await contracts.rwaNFT.read('NEXT_ID');
+    const nextId = new massa.Args(nextIdResult.value).nextU64();
+    const mintedTokenId = nextId - 1n; // The ID just minted is NEXT_ID - 1
+
+    setTimeout(() => refreshData(), 2000);
+    return mintedTokenId;
+
+  }, [contracts.rwaNFT, provider, refreshData]);
+
   return {
     ...data,
     refreshData,
-    mintNFT,
     depositNFT,
     withdrawNFT,
     borrow,
-    repay
+    repay,
+    mintNFT
   };
 }

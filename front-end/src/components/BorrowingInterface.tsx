@@ -32,22 +32,14 @@ export default function BorrowingInterface({ positions, onSuccess }: BorrowingIn
 
     try {
       await positions.borrow(parseInt(selectedCollateral), borrowAmount);
-      setTransactionState(TRANSACTION_STATES.SUCCESS);
+      toast.success('Borrow successful!');
       setSelectedCollateral('');
       setBorrowAmount('');
       onSuccess();
-      
-      setTimeout(() => {
-        setTransactionState(TRANSACTION_STATES.IDLE);
-      }, 3000);
     } catch (err) {
-      setError(getErrorMessage(err));
-      setTransactionState(TRANSACTION_STATES.ERROR);
-      
-      setTimeout(() => {
-        setTransactionState(TRANSACTION_STATES.IDLE);
-      }, 5000);
+      toast.error(getErrorMessage(err));
     }
+    setTransactionState(TRANSACTION_STATES.IDLE);
   };
 
   const handleRepay = async () => {
@@ -105,12 +97,6 @@ export default function BorrowingInterface({ positions, onSuccess }: BorrowingIn
 
         {error && <div className="error-message">{error}</div>}
         
-        {transactionState === TRANSACTION_STATES.SUCCESS && (
-          <div className="success-message">
-            ✅ Borrow successful!
-          </div>
-        )}
-
         <div className="input-group">
           <label>Select Collateral</label>
           <select

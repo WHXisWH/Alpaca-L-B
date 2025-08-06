@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { toast } from 'react-hot-toast';
 import * as massa from '@massalabs/massa-web3';
 import { useContracts } from '../hooks/useContracts';
 import { formatMAS, getErrorMessage, validateAmount } from '../utils/massa';
-import { TRANSACTION_STATES, REFRESH_INTERVALS } from '../utils/constants';
+import { toast } from 'react-hot-toast';
+import { TRANSACTION_STATES } from '../utils/constants';
+import { nftLibrary } from '../utils/nft-library';
 
 interface CollateralManagerProps {
   positions: any;
@@ -21,9 +22,6 @@ interface MyNFT {
 }
 
 export default function CollateralManager({ positions, provider, addresses, onSuccess }: CollateralManagerProps) {
-  const [nftValue, setNftValue] = useState('');
-  const [nftPD, setNftPD] = useState('');
-  const [nftLGD, setNftLGD] = useState('');
   const [depositTokenId, setDepositTokenId] = useState('');
   const [withdrawTokenId, setWithdrawTokenId] = useState('');
   const [transactionState, setTransactionState] = useState(TRANSACTION_STATES.IDLE);
@@ -31,6 +29,7 @@ export default function CollateralManager({ positions, provider, addresses, onSu
   const [newlyMintedId, setNewlyMintedId] = useState<bigint | null>(null);
   const [myNFTs, setMyNFTs] = useState<MyNFT[]>([]);
   const [isLoadingNFTs, setIsLoadingNFTs] = useState(false);
+  const [showMintModal, setShowMintModal] = useState(false);
   
   const actualProvider = provider || positions.provider || (positions as any).provider;
   const actualAddresses = addresses || positions.addresses || (positions as any).addresses;
@@ -49,44 +48,88 @@ export default function CollateralManager({ positions, provider, addresses, onSu
   };
 
   const fetchMyNFTs = async (showLoading: boolean = true): Promise<void> => {
-    if (!contracts.mockNFT || !actualProvider) return;
+    if (!contracts.rwaNFT || !actualProvider) {
+      console.log('Missing contracts or provider:', { rwaNFT: !!contracts.rwaNFT, provider: !!actualProvider });
+      return;
+    }
     
     if (showLoading) {
       setIsLoadingNFTs(true);
     }
+    
     const userAddress = actualProvider.address;
     const nfts: MyNFT[] = [];
     
+    console.log('Fetching NFTs for user:', userAddress);
+    
     try {
-      for (let i = 1; i <= 50; i++) {
+      // First, get the next ID to know the range
+      let maxTokenId = 10; // Default fallback
+      try {
+        const nextIdResult = await contracts.rwaNFT.read('NEXT_ID');
+        if (nextIdResult.value && nextIdResult.value.length > 0) {
+          const nextIdBytes = new Uint8Array(nextIdResult.value);
+          let result = 0;
+          for (let i = 0; i < Math.min(nextIdBytes.length, 8); i++) {
+            result |= nextIdBytes[i] << (i * 8);
+          }
+          maxTokenId = Math.max(result - 1, 1);
+          console.log('NEXT_ID from contract:', result, 'Max token ID:', maxTokenId);
+        }
+      } catch (error) {
+        console.warn('Could not read NEXT_ID, using fallback range:', error);
+      }
+      
+      // Iterate through token IDs to find user's NFTs
+      for (let i = 1; i <= Math.min(maxTokenId, 50); i++) { 
         try {
-          const ownerResult = await contracts.mockNFT.read(
+          console.log(`Checking NFT ${i}...`);
+          
+          const ownerResult = await contracts.rwaNFT.read(
             'ownerOf', 
             new massa.Args().addU64(BigInt(i)).serialize()
           );
           
           if (!ownerResult.value || ownerResult.value.length === 0) {
+            console.log(`NFT ${i} has no owner`);
             continue;
           }
           
           const owner = new TextDecoder().decode(ownerResult.value);
+          console.log(`NFT ${i} owner:`, owner, 'User:', userAddress, 'Match:', owner === userAddress);
           
           if (owner === userAddress) {
+            console.log(`Found user NFT ${i}, fetching oracle data...`);
+            
+            // Fetch value, PD, LGD from Oracle
             const [valueResult, pdResult, lgdResult] = await Promise.all([
-              contracts.mockNFT.read('getTokenValue', new massa.Args().addU64(BigInt(i)).serialize()),
-              contracts.mockNFT.read('getTokenPD', new massa.Args().addU64(BigInt(i)).serialize()),
-              contracts.mockNFT.read('getTokenLGD', new massa.Args().addU64(BigInt(i)).serialize())
+              contracts.oracle.read('getNFTValuation', new massa.Args().addU64(BigInt(i)).serialize()).catch(e => {
+                console.warn(`Failed to get valuation for NFT ${i}:`, e);
+                return null;
+              }),
+              contracts.oracle.read('getNFTPD', new massa.Args().addU64(BigInt(i)).serialize()).catch(e => {
+                console.warn(`Failed to get PD for NFT ${i}:`, e);
+                return null;
+              }),
+              contracts.oracle.read('getNFTLGD', new massa.Args().addU64(BigInt(i)).serialize()).catch(e => {
+                console.warn(`Failed to get LGD for NFT ${i}:`, e);
+                return null;
+              })
             ]);
             
-            if (!valueResult.value || valueResult.value.length === 0 ||
-                !pdResult.value || pdResult.value.length === 0 ||
-                !lgdResult.value || lgdResult.value.length === 0) {
+            if (!valueResult?.value || valueResult.value.length === 0 ||
+                !pdResult?.value || pdResult.value.length === 0 ||
+                !lgdResult?.value || lgdResult.value.length === 0) {
+              console.log(`NFT ${i} missing oracle data, skipping`);
               continue;
             }
             
             const value = new massa.Args(valueResult.value).nextU64();
             const pd = new massa.Args(pdResult.value).nextU64();
             const lgd = new massa.Args(lgdResult.value).nextU64();
+            
+            // Allow NFTs with 0 value to be displayed (they might need repricing)
+            console.log(`NFT ${i} oracle data:`, { value: value.toString(), pd: pd.toString(), lgd: lgd.toString() });
             
             let isDeposited = false;
             if (contracts.collateralVault) {
@@ -99,6 +142,7 @@ export default function CollateralManager({ positions, provider, addresses, onSu
                   isDeposited = new TextDecoder().decode(depositedResult.value) === 'true';
                 }
               } catch (e) {
+                console.warn(`Could not check deposit status for NFT ${i}:`, e);
               }
             }
             
@@ -109,11 +153,16 @@ export default function CollateralManager({ positions, provider, addresses, onSu
               lgd: lgd.toString(),
               isDeposited
             });
+            
+            console.log(`Added NFT ${i} to list`);
           }
         } catch (error) {
+          console.error(`Error fetching NFT ${i}:`, error);
           continue;
         }
       }
+      
+      console.log('Final NFTs found:', nfts.length, nfts);
       
       if (!areNFTsEqual(myNFTs, nfts)) {
         setMyNFTs(nfts);
@@ -129,47 +178,43 @@ export default function CollateralManager({ positions, provider, addresses, onSu
 
   useEffect(() => {
     fetchMyNFTs(true);
-  }, [contracts.mockNFT, actualProvider]);
+  }, [contracts.rwaNFT, actualProvider]); // Depend on rwaNFT
 
-  const handleMintNFT = async () => {
-    if (!validateAmount(nftValue) || !validateAmount(nftPD) || !validateAmount(nftLGD)) {
-      setError('Please enter valid values for all fields');
-      return;
+  // Prevent body scroll when modal is open
+  useEffect(() => {
+    if (showMintModal) {
+      document.body.classList.add('modal-open');
+      return () => {
+        document.body.classList.remove('modal-open');
+      };
     }
+  }, [showMintModal]);
 
-    if (Number(nftPD) > 10000 || Number(nftLGD) > 10000) {
-      setError('PD and LGD values must be in basis points (0-10000)');
-      return;
-    }
-
+  const handleMintFromTemplate = async (template: typeof nftLibrary[0]) => {
     setTransactionState(TRANSACTION_STATES.PENDING);
     setError('');
     setNewlyMintedId(null);
+    setShowMintModal(false); // Close modal
 
     try {
-      const valueInNanoMAS = (parseFloat(nftValue) * 1_000_000_000).toString();
-      const newId = await positions.mintNFT(valueInNanoMAS, nftPD, nftLGD);
+      const newId = await positions.mintNFT(
+        template.metadata,
+        template.value,
+        template.pd,
+        template.lgd
+      );
       setNewlyMintedId(newId);
-      setTransactionState(TRANSACTION_STATES.SUCCESS);
-      setNftValue('');
-      setNftPD('');
-      setNftLGD('');
+      toast.success(`NFT #${newId} (${template.name}) minted and priced successfully!`);
       
       setTimeout(() => {
         fetchMyNFTs(false);
         onSuccess();
-      }, 2000);
+      }, 2000); // Give some time for chain state to update
       
-      setTimeout(() => {
-        setTransactionState(TRANSACTION_STATES.IDLE);
-      }, 10000);
     } catch (err) {
-      setError(getErrorMessage(err));
-      setTransactionState(TRANSACTION_STATES.ERROR);
-      
-      setTimeout(() => {
-        setTransactionState(TRANSACTION_STATES.IDLE);
-      }, 5000);
+      toast.error(getErrorMessage(err));
+    } finally {
+      setTransactionState(TRANSACTION_STATES.IDLE);
     }
   };
 
@@ -184,7 +229,7 @@ export default function CollateralManager({ positions, provider, addresses, onSu
 
     try {
       await positions.depositNFT(parseInt(depositTokenId));
-      setTransactionState(TRANSACTION_STATES.SUCCESS);
+      toast.success(`NFT #${depositTokenId} deposited successfully!`);
       setDepositTokenId('');
       
       setTimeout(() => {
@@ -192,16 +237,10 @@ export default function CollateralManager({ positions, provider, addresses, onSu
         onSuccess();
       }, 2000);
       
-      setTimeout(() => {
-        setTransactionState(TRANSACTION_STATES.IDLE);
-      }, 3000);
     } catch (err) {
-      setError(getErrorMessage(err));
-      setTransactionState(TRANSACTION_STATES.ERROR);
-      
-      setTimeout(() => {
-        setTransactionState(TRANSACTION_STATES.IDLE);
-      }, 5000);
+      toast.error(getErrorMessage(err));
+    } finally {
+      setTransactionState(TRANSACTION_STATES.IDLE);
     }
   };
 
@@ -223,99 +262,101 @@ export default function CollateralManager({ positions, provider, addresses, onSu
         fetchMyNFTs(false);
         onSuccess();
       }, 2000);
+      
     } catch (err) {
       toast.error(getErrorMessage(err));
+    } finally {
+      setTransactionState(TRANSACTION_STATES.IDLE);
     }
-    setTransactionState(TRANSACTION_STATES.IDLE);
   };
 
   const isTransacting = transactionState === TRANSACTION_STATES.PENDING;
 
   return (
+    <>
+      {showMintModal && (
+        <div 
+          className="modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setShowMintModal(false);
+            }
+          }}
+        >
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">🎯 Select NFT Template</h2>
+              <button 
+                className="close-btn" 
+                onClick={() => setShowMintModal(false)}
+                title="Close"
+              >
+                ×
+              </button>
+            </div>
+            <p style={{ 
+              color: 'var(--text-secondary)', 
+              marginBottom: '30px',
+              fontSize: '16px',
+              lineHeight: '1.5'
+            }}>
+              Choose a Real-World Asset (RWA) template to mint as an NFT. Each template represents different risk profiles and asset types for testing the lending protocol.
+            </p>
+            <div className="nft-template-grid">
+              {nftLibrary.map((template) => (
+                <div key={template.id} className="nft-template-card">
+                  <h3>{template.name}</h3>
+                  <p>{template.description}</p>
+                  <div className="template-details">
+                    <span>Value: {formatMAS(template.value)} MAS</span>
+                    <span>PD: {(Number(template.pd) / 100).toFixed(2)}%</span>
+                    <span>LGD: {(Number(template.lgd) / 100).toFixed(2)}%</span>
+                  </div>
+                  <button 
+                    className="btn btn-primary btn-small"
+                    onClick={() => handleMintFromTemplate(template)}
+                    disabled={isTransacting}
+                  >
+                    Mint This NFT
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
     <div className="card-grid">
       <div className="stat-card">
-        <div className="section-title">🏭 Mint RWA NFT</div>
+        <div className="section-title">Mint RWA NFT</div>
         <p style={{ color: 'var(--text-secondary)', marginBottom: '20px' }}>
-          Create a new RWA NFT representing enterprise receivables, bills, or other real-world assets.
+          Create a new RWA NFT representing real-world assets. Select from predefined templates for testing.
         </p>
 
         {error && <div className="error-message">{error}</div>}
         
-        {transactionState === TRANSACTION_STATES.SUCCESS && (
+        {newlyMintedId !== null && transactionState === TRANSACTION_STATES.IDLE && (
           <div className="success-message">
-            ✅ Transaction Successful!
-            {newlyMintedId !== null && (
-              <div style={{ marginTop: '10px', fontSize: '16px', fontWeight: 'bold' }}>
-                🎉 Your new NFT ID is: <span style={{ color: 'var(--primary)' }}>{newlyMintedId.toString()}</span>
-                <div style={{ fontSize: '14px', fontWeight: 'normal', marginTop: '5px' }}>
-                  Use this ID to deposit your NFT as collateral below!
-                </div>
-              </div>
-            )}
+            🎉 Your new NFT ID is: <span style={{ color: 'var(--primary)' }}>{newlyMintedId.toString()}</span>
+            <div style={{ fontSize: '14px', fontWeight: 'normal', marginTop: '5px' }}>
+              Use this ID to deposit your NFT as collateral below!
+            </div>
           </div>
         )}
 
-        <div className="input-group">
-          <label>Asset Value (MAS)</label>
-          <input
-            type="number"
-            min="0"
-            step="0.000001"
-            value={nftValue}
-            onChange={(e) => setNftValue(e.target.value)}
-            placeholder="Enter asset value"
-            disabled={isTransacting}
-          />
-          <div className="input-hint">
-            The total value of the underlying asset
-          </div>
-        </div>
-
-        <div className="input-group">
-          <label>PD - Probability of Default (basis points)</label>
-          <input
-            type="number"
-            min="0"
-            max="10000"
-            value={nftPD}
-            onChange={(e) => setNftPD(e.target.value)}
-            placeholder="Enter PD (0-10000)"
-            disabled={isTransacting}
-          />
-          <div className="input-hint">
-            100 = 1%, 500 = 5%, 1000 = 10%
-          </div>
-        </div>
-
-        <div className="input-group">
-          <label>LGD - Loss Given Default (basis points)</label>
-          <input
-            type="number"
-            min="0"
-            max="10000"
-            value={nftLGD}
-            onChange={(e) => setNftLGD(e.target.value)}
-            placeholder="Enter LGD (0-10000)"
-            disabled={isTransacting}
-          />
-          <div className="input-hint">
-            Expected loss percentage if default occurs
-          </div>
-        </div>
-
         <button
           className="btn btn-primary"
-          onClick={handleMintNFT}
-          disabled={isTransacting || !nftValue || !nftPD || !nftLGD}
+          onClick={() => setShowMintModal(true)}
+          disabled={isTransacting}
           style={{ width: '100%' }}
         >
           {isTransacting ? (
             <>
               <span className="loading-spinner"></span>
-              Minting...
+              Processing...
             </>
           ) : (
-            'Mint NFT'
+            'Mint NFT from Template'
           )}
         </button>
       </div>
@@ -428,8 +469,10 @@ export default function CollateralManager({ positions, provider, addresses, onSu
           </div>
         ) : myNFTs.filter(nft => !nft.isDeposited).length === 0 ? (
           <div className="empty-state">
+            <span className="empty-state-icon">🖼️</span>
             <h3>No Available NFTs</h3>
-            <p>You don't have any available NFTs. Mint one above or withdraw deposited ones!</p>
+            <p>You don't have any NFTs to use as collateral yet.</p>
+            <button className="btn btn-primary" onClick={() => setShowMintModal(true)}>Mint an NFT from Template</button>
           </div>
         ) : (
           <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
@@ -567,5 +610,6 @@ export default function CollateralManager({ positions, provider, addresses, onSu
         </div>
       </div>
     </div>
+    </>
   );
 }

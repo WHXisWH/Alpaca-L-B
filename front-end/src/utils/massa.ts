@@ -8,7 +8,7 @@ export async function loadAddresses(): Promise<Record<string, string>> {
     liquidationEngine: (import.meta as any).env?.VITE_LIQUIDATION_ENGINE_ADDRESS || '',
     oracle: (import.meta as any).env?.VITE_ORACLE_ADDRESS || '',
     governance: (import.meta as any).env?.VITE_GOVERNANCE_ADDRESS || '',
-    mockNFT: (import.meta as any).env?.VITE_MOCK_NFT_ADDRESS || ''
+    rwaNFT: (import.meta as any).env?.VITE_RWA_NFT_ADDRESS || ''
   };
 
   const hasEnvAddresses = Object.values(envAddresses).some(addr => addr !== '');
@@ -59,9 +59,18 @@ export function parseAmount(amount: string, decimals: number = 9): bigint {
   return BigInt(whole + paddedDecimal);
 }
 
-export function formatMAS(amount: bigint | string): string {
-  const value = typeof amount === 'string' ? BigInt(amount) : amount;
-  return formatAmount(value, 9);
+export function formatMAS(amount: string | bigint): string {
+  let value: number;
+  if (typeof amount === 'string') {
+    value = parseFloat(amount) / 1_000_000_000;
+  } else if (typeof amount === 'bigint') {
+    value = Number(amount) / 1_000_000_000;
+  } else {
+    return '0';
+  }
+  
+  // Remove trailing zeros and unnecessary decimal point
+  return value.toFixed(6).replace(/\.?0+$/, '') || '0';
 }
 
 export function formatPercentage(value: number, decimals: number = 2): string {

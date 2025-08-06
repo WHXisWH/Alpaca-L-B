@@ -263,12 +263,6 @@ export default function LiquidationPanel({ provider, addresses }: LiquidationPan
 
         {error && <div className="error-message">{error}</div>}
         
-        {transactionState === TRANSACTION_STATES.SUCCESS && (
-          <div className="success-message">
-            ✅ Bid placed successfully!
-          </div>
-        )}
-
         <div className="input-group">
           <label>Select Auction</label>
           <select

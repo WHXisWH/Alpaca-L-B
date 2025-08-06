@@ -14,14 +14,14 @@ export const CONTRACT_NAMES = {
   liquidationEngine: 'Liquidation Engine',
   oracle: 'Oracle',
   governance: 'Governance',
-  mockNFT: 'Mock NFT'
+  rwaNFT: 'RWA NFT'
 };
 
 export const TRANSACTION_STATES = {
-  IDLE: 'idle',
-  PENDING: 'pending',
-  SUCCESS: 'success',
-  ERROR: 'error'
+  IDLE: 'IDLE',
+  PENDING: 'PENDING',
+  SUCCESS: 'SUCCESS',
+  ERROR: 'ERROR',
 };
 
 export const TABS = {

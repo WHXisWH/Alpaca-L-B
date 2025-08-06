@@ -1,14 +1,21 @@
-import { generateEvent, Storage, Context } from '@massalabs/massa-as-sdk';
+import { generateEvent, Storage, Context, sendMessage, Address } from '@massalabs/massa-as-sdk';
 import { stringToBytes, bytesToString, u64ToBytes, bytesToU64, Args } from '@massalabs/as-types';
 
 const NEXT_TOKEN_ID_KEY = stringToBytes('NEXT_ID');
 const TOKEN_OWNER_PREFIX = 'OWNER_';
 const TOKEN_METADATA_PREFIX = 'METADATA_';
 const TOTAL_SUPPLY_KEY = stringToBytes('TOTAL_SUPPLY');
+const ORACLE_ADDRESS_KEY = stringToBytes('ORACLE_ADDR');
+const GOVERNANCE_KEY = stringToBytes('GOVERNANCE');
 
-export function constructor(_: StaticArray<u8>): void {
+export function constructor(argsData: StaticArray<u8>): void {
   assert(Context.isDeployingContract(), "Constructor can only be called during deployment");
-  
+  const args = new Args(argsData);
+  const governanceAddress = args.nextString().unwrap();
+  const oracleAddress = args.nextString().unwrap();
+
+  Storage.set(GOVERNANCE_KEY, stringToBytes(governanceAddress));
+  Storage.set(ORACLE_ADDRESS_KEY, stringToBytes(oracleAddress));
   Storage.set(NEXT_TOKEN_ID_KEY, u64ToBytes(1));
   Storage.set(TOTAL_SUPPLY_KEY, u64ToBytes(0));
   
@@ -19,6 +26,9 @@ export function mint(argsData: StaticArray<u8>): StaticArray<u8> {
   const args = new Args(argsData);
   const to = args.nextString().expect('Invalid recipient address');
   const metadata = args.nextString().expect('Invalid metadata');
+  const value = args.nextU64().expect('Invalid valuation');
+  const pd = args.nextU64().expect('Invalid PD');
+  const lgd = args.nextU64().expect('Invalid LGD');
   
   const tokenId = bytesToU64(Storage.get(NEXT_TOKEN_ID_KEY));
   const totalSupply = bytesToU64(Storage.get(TOTAL_SUPPLY_KEY));
@@ -31,6 +41,17 @@ export function mint(argsData: StaticArray<u8>): StaticArray<u8> {
   
   generateEvent('RWA NFT minted to ' + to + ' with tokenId ' + tokenId.toString());
   
+  // New: Call Oracle to set initial profile using a packed string
+  const oracleAddress = new Address(bytesToString(Storage.get(ORACLE_ADDRESS_KEY)));
+  const packedData = tokenId.toString() + ':' + value.toString() + ':' + pd.toString() + ':' + lgd.toString();
+
+  const period = Context.currentPeriod();
+  const thread = Context.currentThread();
+
+  sendMessage(oracleAddress, 'setInitialNFTProfileFromString', period, thread, period + 5, thread, 200_000_000, 0, 0, stringToBytes(packedData));
+
+  generateEvent('Initial profile setup requested for NFT ' + tokenId.toString());
+
   return u64ToBytes(tokenId);
 }
 
@@ -118,4 +139,16 @@ export function exists(argsData: StaticArray<u8>): StaticArray<u8> {
   } else {
     return stringToBytes('false');
   }
+}
+
+export function NEXT_ID(_: StaticArray<u8>): StaticArray<u8> {
+  return Storage.get(NEXT_TOKEN_ID_KEY);
+}
+
+export function setOracleAddress(argsData: StaticArray<u8>): void {
+    const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
+    assert(Context.caller().toString() == governanceAddress, "Only governance can set oracle address");
+    const oracleAddr = bytesToString(argsData);
+    Storage.set(ORACLE_ADDRESS_KEY, stringToBytes(oracleAddr));
+    generateEvent('Oracle address updated in RWA_NFT');
 }

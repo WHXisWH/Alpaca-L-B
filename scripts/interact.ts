@@ -7,8 +7,17 @@ import {
   JsonRpcProvider,
   Mas,
   Args,
-  Operation
+  Operation,
 } from '@massalabs/massa-web3';
+
+// Helper function to convert bytes to u64
+function bytesToU64(bytes: Uint8Array): bigint {
+  let result = 0n;
+  for (let i = 0; i < Math.min(bytes.length, 8); i++) {
+    result |= BigInt(bytes[i]) << BigInt(i * 8);
+  }
+  return result;
+}
 
 async function main() {
   console.log('Alpaca LB Interaction Script');
@@ -20,7 +29,7 @@ async function main() {
   const addressesFile = readFileSync(resolve(process.cwd(), 'addresses.json'), 'utf-8');
   const addresses = JSON.parse(addressesFile);
 
-  const mockNFTContract = new SmartContract(provider, addresses.mockNFT, account);
+  const rwaNftContract = new SmartContract(provider, addresses.rwaNFT, account);
   const governanceContract = new SmartContract(provider, addresses.governance, account);
   const oracleContract = new SmartContract(provider, addresses.oracle, account);
   const vaultContract = new SmartContract(provider, addresses.collateralVault, account);
@@ -55,6 +64,15 @@ async function main() {
       await awaitOperationFinalization(op);
       console.log('✅ Risk manager evaluation start message sent!');
       console.log('ℹ️ Note: The ASC will activate in the next block. Use "npm run interact checkStatus" to verify.');
+      break;
+    }
+
+    case 'startPriceUpdater': {
+      console.log('Starting Oracle autonomous price updates...');
+      const op = await oracleContract.call('startUpdates', new Args().serialize(), TX_GAS_LIMIT);
+      await awaitOperationFinalization(op);
+      console.log('✅ Oracle autonomous price updates started!');
+      console.log('ℹ️ Note: The ASC will activate in the next block and update prices every 30 minutes.');
       break;
     }
 
@@ -115,21 +133,39 @@ async function main() {
       break;
     }
 
-    case 'mintNFT': {
-      const value = process.argv[3] || '10000000';
-      const pd = process.argv[4] || '500';
-      const lgd = process.argv[5] || '4000';
-      const maturity = process.argv[6] || Math.floor(Date.now() / 1000 + 365 * 24 * 3600).toString();
-      console.log(`Minting NFT with value: ${value}, PD: ${pd}, LGD: ${lgd}...`);
+    case 'mintFromTemplate': {
+      const metadata = process.argv[3] || 'Test Real Estate NFT';
+      const value = process.argv[4] || '10000000'; // 10k MAS
+      const pd = process.argv[5] || '500'; // 5%
+      const lgd = process.argv[6] || '4000'; // 40%
+      
+      console.log(`Minting NFT with metadata: "${metadata}", value: ${value}, PD: ${pd}, LGD: ${lgd}...`);
+
+      // 1. Get the token ID that will be minted
+      const nextIdResult = await rwaNftContract.read('NEXT_ID');
+      const tokenId = bytesToU64(nextIdResult.value);
+
+      // 2. Mint NFT
       const mintArgs = new Args()
         .addString(account.address.toString())
+        .addString(metadata);
+      const mintOp = await rwaNftContract.call('mint', mintArgs.serialize(), TX_GAS_LIMIT);
+      await awaitOperationFinalization(mintOp);
+      console.log(`✅ NFT Minted (Token ID: ${tokenId})`);
+
+      // 3. Set initial NFT profile in Oracle
+      console.log('Setting initial NFT profile in Oracle...');
+      const profileArgs = new Args()
+        .addU64(BigInt(tokenId))
         .addU64(BigInt(value))
         .addU64(BigInt(pd))
-        .addU64(BigInt(lgd))
-        .addU64(BigInt(maturity));
-      const op = await mockNFTContract.call('mint', mintArgs.serialize(), TX_GAS_LIMIT);
-      await awaitOperationFinalization(op);
-      console.log('✅ NFT minted successfully!');
+        .addU64(BigInt(lgd));
+      const profileOp = await oracleContract.call('setInitialNFTProfile', profileArgs.serialize(), TX_GAS_LIMIT);
+      await awaitOperationFinalization(profileOp);
+      
+      console.log('✅ Oracle updated successfully!');
+      console.log(`
+🎉 NFT ${tokenId} is ready to be used as collateral.`);
       break;
     }
 
@@ -183,6 +219,62 @@ async function main() {
       const op = await oracleContract.call('updatePrice', priceArgs.serialize(), TX_GAS_LIMIT);
       await awaitOperationFinalization(op);
       console.log('✅ Price updated!');
+      break;
+    }
+
+    case 'updateNFTPrice': {
+      const tokenId = process.argv[3] || '1';
+      const value = process.argv[4] || '50000000000000'; // 50k MAS in nanoMAS
+      const pd = process.argv[5] || '300';    // 3%
+      const lgd = process.argv[6] || '3000';  // 30%
+      
+      console.log(`Updating NFT ${tokenId} pricing...`);
+      console.log(`Value: ${parseInt(value) / 1_000_000_000} MAS, PD: ${parseInt(pd)/100}%, LGD: ${parseInt(lgd)/100}%`);
+      console.log(`Your account: ${account.address.toString()}`);
+      
+      // Check authorized providers first
+      try {
+        console.log('🔍 Checking authorized providers...');
+        const authProvidersResult = await oracleContract.read('getAuthorizedProviders');
+        const authProviders = Buffer.from(authProvidersResult.value).toString();
+        console.log(`Authorized providers: ${authProviders}`);
+        console.log(`Your account authorized: ${authProviders.includes(account.address.toString())}`);
+      } catch (e) {
+        console.warn('Could not check authorized providers:', e);
+      }
+      
+      const updateArgs = new Args()
+        .addU64(BigInt(tokenId))
+        .addU64(BigInt(value))
+        .addU64(BigInt(pd))
+        .addU64(BigInt(lgd));
+      
+      try {
+        const op = await oracleContract.call('setInitialNFTProfile', updateArgs.serialize(), TX_GAS_LIMIT);
+        await awaitOperationFinalization(op);
+        console.log('✅ NFT pricing updated!');
+        
+        // Verify the update
+        console.log('🔍 Verifying update...');
+        const valueCheck = await oracleContract.read('getNFTValuation', new Args().addU64(BigInt(tokenId)).serialize());
+        const finalValue = new Args(valueCheck.value).nextU64();
+        console.log(`✅ Final value: ${finalValue.toString()} nanoMAS (${Number(finalValue) / 1_000_000_000} MAS)`);
+      } catch (error) {
+        console.error('❌ Failed to update NFT pricing:', error);
+        throw error;
+      }
+      break;
+    }
+
+    case 'addMeAsOracleProvider': {
+      console.log('Adding your account as Oracle authorized provider...');
+      console.log(`Your account: ${account.address.toString()}`);
+      
+      const addProviderArgs = new Args().addString(account.address.toString());
+      const op = await oracleContract.call('addAuthorizedProvider', addProviderArgs.serialize(), TX_GAS_LIMIT);
+      await awaitOperationFinalization(op);
+      
+      console.log('✅ You are now an authorized Oracle provider!');
       break;
     }
 
@@ -285,13 +377,16 @@ async function main() {
       console.log('  diagnose                  - (NEW) Run diagnosis to find the async error reason');
       console.log('  startLendingAccrual       - Start automatic interest accrual');
       console.log('  startRiskEvaluation       - Start automatic risk evaluation');
+      console.log('  startPriceUpdater         - Start Oracle autonomous price updates');
       console.log('  checkStatus               - Directly check if ASCs are active on the blockchain');
-      console.log('  mintNFT [value] [pd] [lgd] - Mint test NFT');
+      console.log('  mintFromTemplate [metadata] [value] [pd] [lgd] - Mint a new RWA NFT with oracle data');
       console.log('  depositNFT <tokenId>      - Deposit NFT as collateral');
       console.log('  deposit <amount>          - Deposit MAS to lending pool');
       console.log('  borrow <tokenId> <amount> - Borrow MAS against collateral');
       console.log('  repay <positionId> <amount> - Repay borrowed amount');
       console.log('  updatePrice <price>       - Update oracle price');
+      console.log('  updateNFTPrice <tokenId> [value] [pd] [lgd] - Update specific NFT pricing');
+      console.log('  addMeAsOracleProvider     - Add your account as authorized Oracle provider');
       console.log('  info                      - Show protocol information');
       console.log('  positions [user]          - Show user positions');
       console.log('  auctions                  - Show active auctions');

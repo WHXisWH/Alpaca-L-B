@@ -1,5 +1,6 @@
 export const INTEREST_ACCRUAL_INTERVAL: u64 = 32;
 export const RISK_EVALUATION_INTERVAL: u64 = 64;
+export const ORACLE_UPDATE_INTERVAL: u64 = 96;
 export const BASE_INTEREST_RATE: u64 = 500;
 export const INTEREST_RATE_SLOPE: u64 = 2000;
 export const BASIS_POINTS: u64 = 10000;

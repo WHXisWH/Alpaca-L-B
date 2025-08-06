@@ -93,22 +93,36 @@ export function useLending(provider: any, addresses: Record<string, string>) {
       { coins }
     );
 
-    await operation.waitFinalExecution();
-    await refreshData();
+    // Wait for operation with timeout
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Transaction timeout after 2 minutes')), 120000)
+    );
+    
+    await Promise.race([operation.waitFinalExecution(), timeout]);
+    
+    // Refresh data after a delay to allow blockchain state to update
+    setTimeout(() => refreshData(), 3000);
   }, [contracts.lendingPool, refreshData]);
 
   const withdraw = useCallback(async (amount: string): Promise<void> => {
     if (!contracts.lendingPool) throw new Error('Lending pool contract not available');
 
-    const withdrawAmount = BigInt(Math.floor(parseFloat(amount) * 1_000_000));
+    const withdrawAmount = BigInt(Math.floor(parseFloat(amount) * 1_000_000_000));
     
     const operation = await contracts.lendingPool.call(
       'withdraw',
       new massa.Args().addU64(withdrawAmount).serialize()
     );
 
-    await operation.waitFinalExecution();
-    await refreshData();
+    // Wait for operation with timeout
+    const timeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Transaction timeout after 2 minutes')), 120000)
+    );
+    
+    await Promise.race([operation.waitFinalExecution(), timeout]);
+    
+    // Refresh data after a delay to allow blockchain state to update
+    setTimeout(() => refreshData(), 3000);
   }, [contracts.lendingPool, refreshData]);
 
   return {

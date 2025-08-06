@@ -28,7 +28,7 @@ async function main() {
     fee: massa.Mas.fromString('0.01')
   };
 
-  let nftContract: massa.SmartContract;
+  let rwaNftContract: massa.SmartContract;
   let governanceContract: massa.SmartContract;
   let oracleContract: massa.SmartContract;
   let vaultContract: massa.SmartContract;
@@ -36,23 +36,7 @@ async function main() {
   let lendingPoolContract: massa.SmartContract;
   let liquidationContract: massa.SmartContract;
 
-  console.log('\nStep 1: Deploying MockNFT contract...');
-  const nftBytecode = readFileSync('./build/MockNFT.wasm');
-  try {
-    nftContract = await massa.SmartContract.deploy(
-      provider,
-      nftBytecode,
-      new Uint8Array(0),
-      TX_OPTIONS
-    );
-    addresses.mockNFT = nftContract.address;
-    console.log(`✅ MockNFT deployed at: ${addresses.mockNFT}`);
-  } catch (error) {
-    console.error('Failed to deploy MockNFT:', error);
-    throw error;
-  }
-
-  console.log('\nStep 2: Deploying Governance contract...');
+  console.log('Step 1: Deploying Governance contract...');
   const governanceBytecode = readFileSync('./build/Governance.wasm');
   try {
     governanceContract = await massa.SmartContract.deploy(
@@ -68,13 +52,17 @@ async function main() {
     throw error;
   }
 
-  console.log('\nStep 3: Deploying Oracle contract...');
+  console.log('Step 2: Deploying Oracle contract...');
   const oracleBytecode = readFileSync('./build/Oracle.wasm');
   try {
+    const oracleConstructorArgs = new massa.Args()
+      .addString(addresses.governance)
+      .addString(addresses.governance) // Placeholder for vault
+      .addString(""); // Placeholder for RWA_NFT, will be set later
     oracleContract = await massa.SmartContract.deploy(
       provider,
       oracleBytecode,
-      new Uint8Array(0),
+      oracleConstructorArgs.serialize(),
       TX_OPTIONS
     );
     addresses.oracle = oracleContract.address;
@@ -84,12 +72,37 @@ async function main() {
     throw error;
   }
 
-  console.log('\nStep 4: Deploying CollateralVault contract...');
+
+  console.log('Step 3: Deploying RWA_NFT contract...');
+  const rwaNftBytecode = readFileSync('./build/RWA_NFT.wasm');
+  try {
+    const rwaNftConstructorArgs = new massa.Args()
+      .addString(addresses.governance)
+      .addString(addresses.oracle);
+    rwaNftContract = await massa.SmartContract.deploy(
+      provider,
+      rwaNftBytecode,
+      rwaNftConstructorArgs.serialize(),
+      TX_OPTIONS
+    );
+    addresses.rwaNFT = rwaNftContract.address;
+    console.log(`✅ RWA_NFT deployed at: ${addresses.rwaNFT}`);
+  } catch (error) {
+    console.error('Failed to deploy RWA_NFT:', error);
+    throw error;
+  }
+
+  // After RWA_NFT is deployed, set its address in the Oracle
+  console.log('Setting RWA_NFT address in Oracle...');
+  const setNftAddrOp = await oracleContract.call('setRwaNftAddress', new massa.Args().addString(addresses.rwaNFT).serialize(), CALL_OPTIONS);
+  await setNftAddrOp.waitFinalExecution();
+
+  console.log('Step 4: Deploying CollateralVault contract...');
   const vaultBytecode = readFileSync('./build/CollateralVault.wasm');
   try {
     const vaultConstructorArgs = new massa.Args()
       .addString(addresses.governance)
-      .addString(addresses.mockNFT)
+      .addString(addresses.rwaNFT) // Use RWA_NFT here
       .addString(addresses.oracle);
     vaultContract = await massa.SmartContract.deploy(
       provider,
@@ -104,7 +117,7 @@ async function main() {
     throw error;
   }
 
-  console.log('\nStep 5: Deploying RiskManager contract...');
+  console.log('Step 5: Deploying RiskManager contract...');
   const riskManagerBytecode = readFileSync('./build/RiskManager.wasm');
   try {
     const riskConstructorArgs = new massa.Args()
@@ -124,7 +137,7 @@ async function main() {
     throw error;
   }
 
-  console.log('\nStep 6: Deploying LendingPool contract...');
+  console.log('Step 6: Deploying LendingPool contract...');
   const lendingPoolBytecode = readFileSync('./build/LendingPool.wasm');
   try {
     const poolConstructorArgs = new massa.Args()
@@ -144,7 +157,7 @@ async function main() {
     throw error;
   }
 
-  console.log('\nStep 7: Deploying LiquidationEngine contract...');
+  console.log('Step 7: Deploying LiquidationEngine contract...');
   const liquidationBytecode = readFileSync('./build/LiquidationEngine.wasm');
   try {
     const liquidationConstructorArgs = new massa.Args()
@@ -165,7 +178,7 @@ async function main() {
     throw error;
   }
 
-  console.log('\nStep 8: Configuring contract connections...');
+  console.log('Step 8: Configuring contract connections...');
   try {
     console.log('Setting CollateralVault address in Governance...');
     const setVaultOp = await governanceContract.call('setCollateralVault', new massa.Args().addString(addresses.collateralVault).serialize(), CALL_OPTIONS);
@@ -194,6 +207,14 @@ async function main() {
     console.log('Setting LiquidationEngine address in RiskManager...');
     const setLiqInRiskOp = await governanceContract.call('setLiquidationEngineInRiskManager', new massa.Args().addString(addresses.liquidationEngine).serialize(), CALL_OPTIONS);
     await setLiqInRiskOp.waitFinalExecution();
+
+    console.log('Adding deployer as authorized provider in Oracle...');
+    const addAuthOp = await oracleContract.call('addAuthorizedProvider', new massa.Args().addString(account.address.toString()).serialize(), CALL_OPTIONS);
+    await addAuthOp.waitFinalExecution();
+
+    console.log('Setting CollateralVault address in Oracle...');
+    const setVaultInOracleOp = await oracleContract.call('setCollateralVault', new massa.Args().addString(addresses.collateralVault).serialize(), CALL_OPTIONS);
+    await setVaultInOracleOp.waitFinalExecution();
     
     console.log('✅ Contract connections configured');
   } catch (error) {
@@ -212,15 +233,15 @@ async function main() {
     console.error('Failed to write addresses file:', error);
   }
 
-  console.log('\n✅ Deployment complete!');
-  console.log('\nContract addresses saved to addresses.json:');
+  console.log('Deployment complete!');
+  console.log('Contract addresses saved to addresses.json:');
   console.log(JSON.stringify(addresses, null, 2));
 
-  console.log('\n📝 Next steps:');
+  console.log('Next steps:');
   console.log('1. Start interest accrual: npm run interact startLendingAccrual');
   console.log('2. Start risk evaluation: npm run interact startRiskEvaluation');
-  console.log('3. Mint test NFTs: npm run interact mintNFT');
-  console.log('4. Test deposit: npm run interact deposit 10');
+  console.log('3. Start autonomous price updates: npm run interact startPriceUpdater');
+  console.log('4. Mint test NFTs from template: npm run interact mintFromTemplate');
 }
 
 main().catch(error => {

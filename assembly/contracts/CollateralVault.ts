@@ -192,7 +192,12 @@ export function setOracleContract(argsData: StaticArray<u8>): void {
 export function refreshNFTData(argsData: StaticArray<u8>): void {
   const tokenId = bytesToU64(argsData);
   const depositedKey = stringToBytes(DEPOSITED_NFT_PREFIX + tokenId.toString());
-  assert(Storage.has(depositedKey), "NFT not deposited");
+  
+  // Only refresh data for NFTs that are actually deposited in the vault.
+  // The Oracle will call this for all priced NFTs, so we need this check.
+  if (!Storage.has(depositedKey)) {
+    return;
+  }
   
   const oracleContract = new Address(bytesToString(Storage.get(ORACLE_CONTRACT_KEY)));
   

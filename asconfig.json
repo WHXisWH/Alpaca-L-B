@@ -17,7 +17,6 @@
       "assembly/contracts/LiquidationEngine.ts",
       "assembly/contracts/Oracle.ts",
       "assembly/contracts/Governance.ts",
-      "assembly/contracts/MockNFT.ts",
       "assembly/contracts/RWA_NFT.ts"
     ]
 }
