@@ -1,4 +1,4 @@
-import { generateEvent, Storage, Context, sendMessage, Address } from '@massalabs/massa-as-sdk';
+import { generateEvent, Storage, Context, Address } from '@massalabs/massa-as-sdk';
 import { stringToBytes, bytesToString, u64ToBytes, bytesToU64, Args } from '@massalabs/as-types';
 
 const NEXT_TOKEN_ID_KEY = stringToBytes('NEXT_ID');
@@ -41,16 +41,27 @@ export function mint(argsData: StaticArray<u8>): StaticArray<u8> {
   
   generateEvent('RWA NFT minted to ' + to + ' with tokenId ' + tokenId.toString());
   
-  // New: Call Oracle to set initial profile using a packed string
+  // Directly set Oracle price data in Oracle contract storage
   const oracleAddress = new Address(bytesToString(Storage.get(ORACLE_ADDRESS_KEY)));
-  const packedData = tokenId.toString() + ':' + value.toString() + ':' + pd.toString() + ':' + lgd.toString();
-
-  const period = Context.currentPeriod();
-  const thread = Context.currentThread();
-
-  sendMessage(oracleAddress, 'setInitialNFTProfileFromString', period, thread, period + 5, thread, 200_000_000, 0, 0, stringToBytes(packedData));
-
-  generateEvent('Initial profile setup requested for NFT ' + tokenId.toString());
+  const tokenIdStr = tokenId.toString();
+  
+  // Set Oracle storage directly (same keys as Oracle contract uses)
+  Storage.setOf(oracleAddress, stringToBytes('NFT_VAL_' + tokenIdStr), u64ToBytes(value));
+  Storage.setOf(oracleAddress, stringToBytes('NFT_PD_' + tokenIdStr), u64ToBytes(pd));
+  Storage.setOf(oracleAddress, stringToBytes('NFT_LGD_' + tokenIdStr), u64ToBytes(lgd));
+  Storage.setOf(oracleAddress, stringToBytes('NFT_UPDATE_' + tokenIdStr), u64ToBytes(Context.timestamp()));
+  
+  // Add to Oracle's priced NFT list
+  const pricedNFTsKey = stringToBytes('PRICED_NFT_LIST');
+  const existingNFTsData = Storage.hasOf(oracleAddress, pricedNFTsKey) ? 
+    bytesToString(Storage.getOf(oracleAddress, pricedNFTsKey)) : '';
+  
+  if (!existingNFTsData.split(',').includes(tokenIdStr)) {
+    const newNFTList = existingNFTsData == '' ? tokenIdStr : existingNFTsData + ',' + tokenIdStr;
+    Storage.setOf(oracleAddress, pricedNFTsKey, stringToBytes(newNFTList));
+  }
+  
+  generateEvent('Initial profile set for NFT ' + tokenId.toString());
 
   return u64ToBytes(tokenId);
 }

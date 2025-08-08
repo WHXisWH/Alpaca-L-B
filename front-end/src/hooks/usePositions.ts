@@ -203,9 +203,15 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
   }, [contracts.lendingPool, refreshData]);
 
   const mintNFT = useCallback(async (metadata: string, value: string, pd: string, lgd: string): Promise<bigint> => {
-    if (!contracts.rwaNFT || !provider) throw new Error('NFT Contract or provider not available');
+    if (!contracts.rwaNFT || !contracts.oracle || !provider) throw new Error('NFT Contract, Oracle contract or provider not available');
 
     const userAddress = provider.address || provider.getAddress?.() || provider.account?.address;
+
+    // First, get the token ID that will be minted
+    const nextIdResult = await contracts.rwaNFT.read('NEXT_ID');
+    const tokenId = new massa.Args(nextIdResult.value).nextU64();
+
+    console.log(`Minting NFT with ID ${tokenId} and Oracle profile...`);
 
     const mintArgs = new massa.Args()
       .addString(userAddress)
@@ -214,19 +220,68 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
       .addU64(BigInt(pd))
       .addU64(BigInt(lgd));
 
-    const operation = await contracts.rwaNFT.call('mint', mintArgs.serialize());
+    // Step 1: Mint the NFT with higher gas limit to ensure Oracle message succeeds
+    const mintOperation = await contracts.rwaNFT.call('mint', mintArgs.serialize(), {
+      maxGas: BigInt(400_000_000), // Increased gas limit for Oracle sendMessage
+      fee: massa.Mas.fromString('0.01')
+    });
 
-    await operation.waitFinalExecution();
+    await mintOperation.waitFinalExecution();
+    console.log(`NFT ${tokenId} minted successfully`);
 
-    // Since the new token ID is not returned directly, we fetch it from NEXT_ID
-    const nextIdResult = await contracts.rwaNFT.read('NEXT_ID');
-    const nextId = new massa.Args(nextIdResult.value).nextU64();
-    const mintedTokenId = nextId - 1n; // The ID just minted is NEXT_ID - 1
+    // Step 2: Wait for Oracle profile to be set and verify it worked
+    let attempts = 0;
+    const maxAttempts = 10;
+    
+    while (attempts < maxAttempts) {
+      try {
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+        
+        // Check if Oracle has the NFT data
+        const valueResult = await contracts.oracle.read('getNFTValuation', new massa.Args().addU64(tokenId).serialize());
+        const oracleValue = new massa.Args(valueResult.value).nextU64();
+        
+        if (oracleValue > 0n) {
+          console.log(`Oracle profile confirmed for NFT ${tokenId}, value: ${oracleValue}`);
+          break;
+        }
+        
+        attempts++;
+        console.log(`Waiting for Oracle profile... attempt ${attempts}/${maxAttempts}`);
+      } catch (error) {
+        attempts++;
+        console.log(`Oracle check attempt ${attempts} failed:`, error);
+      }
+    }
+
+    // If Oracle profile didn't get set automatically, set it manually as fallback
+    if (attempts >= maxAttempts) {
+      console.log('Oracle auto-setup failed, setting profile manually...');
+      
+      try {
+        const profileArgs = new massa.Args()
+          .addU64(tokenId)
+          .addU64(BigInt(value))
+          .addU64(BigInt(pd))
+          .addU64(BigInt(lgd));
+          
+        const profileOperation = await contracts.oracle.call('setInitialNFTProfile', profileArgs.serialize(), {
+          maxGas: BigInt(200_000_000),
+          fee: massa.Mas.fromString('0.01')
+        });
+        
+        await profileOperation.waitFinalExecution();
+        console.log(`Oracle profile set manually for NFT ${tokenId}`);
+      } catch (error) {
+        console.error('Failed to set Oracle profile manually:', error);
+        throw new Error(`NFT minted but Oracle profile setup failed: ${error}`);
+      }
+    }
 
     setTimeout(() => refreshData(), 2000);
-    return mintedTokenId;
+    return tokenId;
 
-  }, [contracts.rwaNFT, provider, refreshData]);
+  }, [contracts.rwaNFT, contracts.oracle, provider, refreshData]);
 
   return {
     ...data,
