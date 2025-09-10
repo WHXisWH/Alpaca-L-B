@@ -393,27 +393,27 @@ function App() {
       {!state.isConnected && (
         <div className="quick-guide">
           <div className="container">
-            <h2>🚀 Quick Start Guide</h2>
+            <h2>Welcome to the Alpaca Farm!</h2>
             <div className="guide-steps">
               <div className="guide-step">
-                <span className="step-number">1</span>
-                <h3>Connect Wallet</h3>
-                <p>Connect your Massa wallet to start using Alpaca Bridge</p>
+                <span className="step-number">①</span>
+                <h3>Planting (Mint)</h3>
+                <p>First, turn your assets into a "Digital Farmland" (RWA-NFT). This is the first step to generating value.</p>
               </div>
               <div className="guide-step">
-                <span className="step-number">2</span>
-                <h3>Deposit or Mint NFT</h3>
-                <p>Deposit MAS to earn interest or mint RWA NFT as collateral</p>
+                <span className="step-number">②</span>
+                <h3>Irrigation (Deposit)</h3>
+                <p>By depositing your "Farmland" into Alpaca's magic pool, you activate its value.</p>
               </div>
               <div className="guide-step">
-                <span className="step-number">3</span>
-                <h3>Borrow Against RWA</h3>
-                <p>Use your NFT collateral to borrow MAS with dynamic LTV</p>
+                <span className="step-number">③</span>
+                <h3>Harvest (Borrow)</h3>
+                <p>Harvest liquidity from your "Farmland" to use for new investments and ventures.</p>
               </div>
               <div className="guide-step">
-                <span className="step-number">4</span>
+                <span className="step-number">④</span>
                 <h3>Autonomous Management</h3>
-                <p>ASC automatically manages interest accrual and risk assessment</p>
+                <p>The Alpacas handle everything automatically. You just wait for the next harvest.</p>
               </div>
             </div>
           </div>

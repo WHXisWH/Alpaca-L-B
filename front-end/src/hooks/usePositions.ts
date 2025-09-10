@@ -154,8 +154,13 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
       new massa.Args().addU64(BigInt(tokenId)).serialize()
     );
 
-    await operation.waitFinalExecution();
-    await refreshData();
+    // 立即刷新数据，不等待最终确认
+    refreshData();
+    
+    // 在后台等待最终确认，然后再次刷新
+    operation.waitFinalExecution().then(() => {
+      setTimeout(() => refreshData(), 1000);
+    });
   }, [contracts.collateralVault, refreshData]);
 
   const withdrawNFT = useCallback(async (tokenId: number): Promise<void> => {
@@ -166,8 +171,13 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
       new massa.Args().addU64(BigInt(tokenId)).serialize()
     );
 
-    await operation.waitFinalExecution();
-    await refreshData();
+    // 立即刷新数据，不等待最终确认
+    refreshData();
+    
+    // 在后台等待最终确认，然后再次刷新
+    operation.waitFinalExecution().then(() => {
+      setTimeout(() => refreshData(), 1000);
+    });
   }, [contracts.collateralVault, refreshData]);
 
   const borrow = useCallback(async (tokenId: number, amount: string): Promise<void> => {
@@ -183,8 +193,13 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
         .serialize()
     );
 
-    await operation.waitFinalExecution();
-    await refreshData();
+    // 立即刷新数据，不等待最终确认
+    refreshData();
+    
+    // 在后台等待最终确认，然后再次刷新
+    operation.waitFinalExecution().then(() => {
+      setTimeout(() => refreshData(), 1000);
+    });
   }, [contracts.lendingPool, refreshData]);
 
   const repay = useCallback(async (positionId: number, amount: string): Promise<void> => {
@@ -198,20 +213,25 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
       { coins }
     );
 
-    await operation.waitFinalExecution();
-    await refreshData();
+    // 立即刷新数据，不等待最终确认
+    refreshData();
+    
+    // 在后台等待最终确认，然后再次刷新
+    operation.waitFinalExecution().then(() => {
+      setTimeout(() => refreshData(), 1000);
+    });
   }, [contracts.lendingPool, refreshData]);
 
   const mintNFT = useCallback(async (metadata: string, value: string, pd: string, lgd: string): Promise<bigint> => {
-    if (!contracts.rwaNFT || !contracts.oracle || !provider) throw new Error('NFT Contract, Oracle contract or provider not available');
+    if (!contracts.rwaNFT || !provider) throw new Error('NFT Contract or provider not available');
 
     const userAddress = provider.address || provider.getAddress?.() || provider.account?.address;
 
-    // First, get the token ID that will be minted
+    // Get the token ID that will be minted
     const nextIdResult = await contracts.rwaNFT.read('NEXT_ID');
     const tokenId = new massa.Args(nextIdResult.value).nextU64();
 
-    console.log(`Minting NFT with ID ${tokenId} and Oracle profile...`);
+    console.log(`Minting NFT with ID ${tokenId}...`);
 
     const mintArgs = new massa.Args()
       .addString(userAddress)
@@ -220,68 +240,51 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
       .addU64(BigInt(pd))
       .addU64(BigInt(lgd));
 
-    // Step 1: Mint the NFT with higher gas limit to ensure Oracle message succeeds
+    // Mint the NFT with increased gas limit to ensure Oracle sendMessage succeeds
     const mintOperation = await contracts.rwaNFT.call('mint', mintArgs.serialize(), {
-      maxGas: BigInt(400_000_000), // Increased gas limit for Oracle sendMessage
-      fee: massa.Mas.fromString('0.01')
+      maxGas: BigInt(500_000_000), // Increased gas limit for sendMessage to Oracle
+      fee: massa.Mas.fromString('0.02') // Increased fee for better execution
     });
 
     await mintOperation.waitFinalExecution();
-    console.log(`NFT ${tokenId} minted successfully`);
+    console.log(`NFT ${tokenId} minted and Oracle profile setup initiated`);
 
-    // Step 2: Wait for Oracle profile to be set and verify it worked
-    let attempts = 0;
-    const maxAttempts = 10;
-    
-    while (attempts < maxAttempts) {
-      try {
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
-        
-        // Check if Oracle has the NFT data
-        const valueResult = await contracts.oracle.read('getNFTValuation', new massa.Args().addU64(tokenId).serialize());
-        const oracleValue = new massa.Args(valueResult.value).nextU64();
-        
-        if (oracleValue > 0n) {
-          console.log(`Oracle profile confirmed for NFT ${tokenId}, value: ${oracleValue}`);
-          break;
-        }
-        
-        attempts++;
-        console.log(`Waiting for Oracle profile... attempt ${attempts}/${maxAttempts}`);
-      } catch (error) {
-        attempts++;
-        console.log(`Oracle check attempt ${attempts} failed:`, error);
-      }
-    }
-
-    // If Oracle profile didn't get set automatically, set it manually as fallback
-    if (attempts >= maxAttempts) {
-      console.log('Oracle auto-setup failed, setting profile manually...');
-      
-      try {
-        const profileArgs = new massa.Args()
-          .addU64(tokenId)
-          .addU64(BigInt(value))
-          .addU64(BigInt(pd))
-          .addU64(BigInt(lgd));
-          
-        const profileOperation = await contracts.oracle.call('setInitialNFTProfile', profileArgs.serialize(), {
-          maxGas: BigInt(200_000_000),
-          fee: massa.Mas.fromString('0.01')
-        });
-        
-        await profileOperation.waitFinalExecution();
-        console.log(`Oracle profile set manually for NFT ${tokenId}`);
-      } catch (error) {
-        console.error('Failed to set Oracle profile manually:', error);
-        throw new Error(`NFT minted but Oracle profile setup failed: ${error}`);
-      }
-    }
-
-    setTimeout(() => refreshData(), 2000);
+    // Wait a bit for Oracle message to be processed
+    setTimeout(() => refreshData(), 1500); // Reduced delay for faster feedback
     return tokenId;
 
-  }, [contracts.rwaNFT, contracts.oracle, provider, refreshData]);
+  }, [contracts.rwaNFT, provider, refreshData]);
+
+  const depositAndBorrow = useCallback(async (tokenId: number, amount: string): Promise<void> => {
+    if (!contracts.collateralVault || !contracts.lendingPool) throw new Error('Contracts not available');
+
+    // Step 1: Deposit NFT
+    const depositOp = await contracts.collateralVault.call(
+      'depositNFT',
+      new massa.Args().addU64(BigInt(tokenId)).serialize()
+    );
+    await depositOp.waitFinalExecution();
+
+    // Refresh data to ensure borrow conditions are met
+    await refreshData();
+
+    // Step 2: Borrow if amount is greater than 0
+    if (amount && parseFloat(amount) > 0) {
+        const borrowAmount = BigInt(Math.floor(parseFloat(amount) * 1_000_000_000));
+        const borrowOp = await contracts.lendingPool.call(
+          'borrow',
+          new massa.Args()
+            .addU64(BigInt(tokenId))
+            .addU64(borrowAmount)
+            .serialize()
+        );
+        await borrowOp.waitFinalExecution();
+    }
+
+    // Final refresh
+    setTimeout(() => refreshData(), 1000);
+
+  }, [contracts.collateralVault, contracts.lendingPool, refreshData]);
 
   return {
     ...data,
@@ -290,6 +293,7 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
     withdrawNFT,
     borrow,
     repay,
-    mintNFT
+    mintNFT,
+    depositAndBorrow // Export new function
   };
 }

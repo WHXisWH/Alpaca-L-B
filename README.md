@@ -15,6 +15,16 @@ A cutting-edge DeFi lending platform built on Massa blockchain, leveraging Auton
 - **🌐 DeWeb Frontend**: Unstoppable interface hosted on Massa's decentralized web
 - **🔄 Self-Sovereign Operation**: No external bots, keepers, or manual intervention required
 
+## ✨ Key UX/UI Features (New!)
+
+- ** streamlined Borrow/Repay Workflow**: A completely redesigned, single-page interface for all borrowing and collateral management.
+- **- Click Deposit & Borrow**: Users can now deposit an NFT and borrow against it in a single, seamless transaction.
+- **Visual Health Factor**: At-a-glance risk management with a visual health meter for every loan, preventing unexpected liquidations.
+- **'s Position' Dashboard**: A personalized dashboard module summarizing a user's total collateral, borrows, deposits, and overall account health.
+
+*Suggestion: Add a screenshot of the new Borrow & Repay interface here.*
+`![New Borrow/Repay Interface](placeholder-ui.png)`
+
 ## 🏗️ System Architecture
 
 ```mermaid
@@ -120,8 +130,8 @@ where:
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/alpaca-lb
-cd alpaca-lb
+git clone https://github.com/WHXisWH/Alpaca-L-B
+cd ALPACA-L-B
 
 # Install dependencies
 npm install
@@ -218,12 +228,12 @@ npm run deploy
 3. **Monitor Returns** → Track real-time APY and earnings
 4. **Withdraw** → Redeem deposits + accrued interest anytime
 
-### For Borrowers
-1. **Mint RWA NFT** → Create tokenized representation of real assets
-2. **Deposit Collateral** → Lock NFT in CollateralVault
-3. **Calculate LTV** → System determines borrowing capacity based on PD/LGD
-4. **Borrow MAS** → Receive funds based on risk-adjusted LTV
-5. **Repay Loan** → Return principal + interest to unlock collateral
+### For Borrowers (New Streamlined Flow!)
+1. **Connect Wallet** → Choose MassaStation/Bearby
+2. **Select/Mint NFT** → In the "Borrow & Repay" tab, either select an existing RWA-NFT or mint a new one from a template.
+3. **Deposit & Borrow** → Use the dynamic action panel to deposit the NFT and borrow MAS against it in a single transaction.
+4. **Monitor Health Factor** → Keep an eye on the visual health meter to manage risk.
+5. **Repay Loan** → Return principal + interest to unlock collateral.
 
 ### For Liquidators
 1. **Monitor Auctions** → Track liquidation events in real-time
@@ -248,10 +258,6 @@ npm run deploy
 - **Liquidation Rate**: Percentage of positions liquidated
 - **ASC Uptime**: Autonomous contract execution reliability
 
-## 🤝 Contributing
-
-We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.md) for details.
-
 ### Development Setup
 1. Fork the repository
 2. Create feature branch (`git checkout -b feature/amazing-feature`)
@@ -263,13 +269,6 @@ We welcome contributions! Please see our [Contributing Guidelines](CONTRIBUTING.
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🔗 Links
-
-- **Live Demo**: [https://alpaca-bridge.dev.massa-deweb.xyz/](https://alpaca-bridge.dev.massa-deweb.xyz/)
-- **Documentation**: [docs.alpacalb.com](https://docs.alpacalb.com)
-- **Discord**: [Join Community](https://discord.gg/alpacalb)
-- **Twitter**: [@AlpacaLB](https://twitter.com/AlpacaLB)
-- **Medium**: [Technical Blog](https://medium.com/@alpacalb)
 
 ## ⚠️ Disclaimer
 

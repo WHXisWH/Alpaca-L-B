@@ -93,15 +93,16 @@ export function useLending(provider: any, addresses: Record<string, string>) {
       { coins }
     );
 
-    // Wait for operation with timeout
-    const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Transaction timeout after 2 minutes')), 120000)
-    );
+    // 立即刷新数据，不等待最终确认
+    refreshData();
     
-    await Promise.race([operation.waitFinalExecution(), timeout]);
-    
-    // Refresh data after a delay to allow blockchain state to update
-    setTimeout(() => refreshData(), 3000);
+    // 在后台等待最终确认，然后再次刷新
+    operation.waitFinalExecution().then(() => {
+      setTimeout(() => refreshData(), 1000);
+    }).catch(() => {
+      // 如果失败，也要刷新数据以反映真实状态
+      setTimeout(() => refreshData(), 2000);
+    });
   }, [contracts.lendingPool, refreshData]);
 
   const withdraw = useCallback(async (amount: string): Promise<void> => {
@@ -114,15 +115,16 @@ export function useLending(provider: any, addresses: Record<string, string>) {
       new massa.Args().addU64(withdrawAmount).serialize()
     );
 
-    // Wait for operation with timeout
-    const timeout = new Promise((_, reject) =>
-      setTimeout(() => reject(new Error('Transaction timeout after 2 minutes')), 120000)
-    );
+    // 立即刷新数据，不等待最终确认
+    refreshData();
     
-    await Promise.race([operation.waitFinalExecution(), timeout]);
-    
-    // Refresh data after a delay to allow blockchain state to update
-    setTimeout(() => refreshData(), 3000);
+    // 在后台等待最终确认，然后再次刷新
+    operation.waitFinalExecution().then(() => {
+      setTimeout(() => refreshData(), 1000);
+    }).catch(() => {
+      // 如果失败，也要刷新数据以反映真实状态
+      setTimeout(() => refreshData(), 2000);
+    });
   }, [contracts.lendingPool, refreshData]);
 
   return {

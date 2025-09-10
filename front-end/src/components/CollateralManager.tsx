@@ -209,7 +209,7 @@ export default function CollateralManager({ positions, provider, addresses, onSu
       setTimeout(() => {
         fetchMyNFTs(false);
         onSuccess();
-      }, 2000); // Give some time for chain state to update
+      }, 1000); // Reduced delay for faster feedback // Give some time for chain state to update
       
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -235,7 +235,7 @@ export default function CollateralManager({ positions, provider, addresses, onSu
       setTimeout(() => {
         fetchMyNFTs(false);
         onSuccess();
-      }, 2000);
+      }, 1000); // Reduced delay for faster feedback
       
     } catch (err) {
       toast.error(getErrorMessage(err));
@@ -261,7 +261,7 @@ export default function CollateralManager({ positions, provider, addresses, onSu
       setTimeout(() => {
         fetchMyNFTs(false);
         onSuccess();
-      }, 2000);
+      }, 1000); // Reduced delay for faster feedback
       
     } catch (err) {
       toast.error(getErrorMessage(err));

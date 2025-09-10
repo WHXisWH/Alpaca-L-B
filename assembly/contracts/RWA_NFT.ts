@@ -1,4 +1,4 @@
-import { generateEvent, Storage, Context, Address } from '@massalabs/massa-as-sdk';
+import { generateEvent, Storage, Context, Address, sendMessage } from '@massalabs/massa-as-sdk';
 import { stringToBytes, bytesToString, u64ToBytes, bytesToU64, Args } from '@massalabs/as-types';
 
 const NEXT_TOKEN_ID_KEY = stringToBytes('NEXT_ID');
@@ -41,27 +41,31 @@ export function mint(argsData: StaticArray<u8>): StaticArray<u8> {
   
   generateEvent('RWA NFT minted to ' + to + ' with tokenId ' + tokenId.toString());
   
-  // Directly set Oracle price data in Oracle contract storage
+  // Call Oracle contract to set initial profile using sendMessage
   const oracleAddress = new Address(bytesToString(Storage.get(ORACLE_ADDRESS_KEY)));
   const tokenIdStr = tokenId.toString();
   
-  // Set Oracle storage directly (same keys as Oracle contract uses)
-  Storage.setOf(oracleAddress, stringToBytes('NFT_VAL_' + tokenIdStr), u64ToBytes(value));
-  Storage.setOf(oracleAddress, stringToBytes('NFT_PD_' + tokenIdStr), u64ToBytes(pd));
-  Storage.setOf(oracleAddress, stringToBytes('NFT_LGD_' + tokenIdStr), u64ToBytes(lgd));
-  Storage.setOf(oracleAddress, stringToBytes('NFT_UPDATE_' + tokenIdStr), u64ToBytes(Context.timestamp()));
+  // Create packed data string for Oracle function
+  const packedData = tokenIdStr + ':' + value.toString() + ':' + pd.toString() + ':' + lgd.toString();
   
-  // Add to Oracle's priced NFT list
-  const pricedNFTsKey = stringToBytes('PRICED_NFT_LIST');
-  const existingNFTsData = Storage.hasOf(oracleAddress, pricedNFTsKey) ? 
-    bytesToString(Storage.getOf(oracleAddress, pricedNFTsKey)) : '';
+  // Send message to Oracle to set initial NFT profile
+  const period = Context.currentPeriod();
+  const thread = Context.currentThread();
   
-  if (!existingNFTsData.split(',').includes(tokenIdStr)) {
-    const newNFTList = existingNFTsData == '' ? tokenIdStr : existingNFTsData + ',' + tokenIdStr;
-    Storage.setOf(oracleAddress, pricedNFTsKey, stringToBytes(newNFTList));
-  }
+  sendMessage(
+    oracleAddress,
+    'setInitialNFTProfileFromString',
+    period,
+    thread,
+    period + 5,  // execution period
+    thread,
+    300_000_000, // gas limit - increased for reliability
+    0,           // coins
+    0,           // fee
+    stringToBytes(packedData)
+  );
   
-  generateEvent('Initial profile set for NFT ' + tokenId.toString());
+  generateEvent('Oracle profile setup initiated for NFT ' + tokenId.toString());
 
   return u64ToBytes(tokenId);
 }

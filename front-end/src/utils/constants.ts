@@ -26,8 +26,7 @@ export const TRANSACTION_STATES = {
 
 export const TABS = {
   LEND: 'lend',
-  BORROW: 'borrow',
-  POSITIONS: 'positions',
+  BORROW_REPAY: 'borrow_repay',
   LIQUIDATIONS: 'liquidations'
 };
 
@@ -43,7 +42,7 @@ export const NETWORK_CONFIG = {
 };
 
 export const REFRESH_INTERVALS = {
-  FAST: 5_000,
-  NORMAL: 10_000,
-  SLOW: 30_000
+  FAST: 2_000,    // 2秒 - 更快的刷新
+  NORMAL: 5_000,  // 5秒 - 减少等待时间  
+  SLOW: 15_000    // 15秒 - 降低慢速刷新间隔
 };
