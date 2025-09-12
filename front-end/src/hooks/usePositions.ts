@@ -130,7 +130,8 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
             }
           }
         } catch (error) {
-          break;
+          // Continue scanning on intermittent read errors
+          continue;
         }
       }
 
@@ -228,17 +229,17 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
               }
             }
           } catch (error) {
-            break;
+            continue;
           }
         }
       }
 
-      setData({
-        userPositions: positions,
-        userCollaterals: collaterals,
+      setData(prev => ({
+        userPositions: positions.length > 0 ? positions : prev.userPositions,
+        userCollaterals: collaterals.length > 0 ? collaterals : prev.userCollaterals,
         isLoading: false,
         error: null
-      });
+      }));
 
     } catch (error) {
       console.error('Failed to fetch positions data:', error);

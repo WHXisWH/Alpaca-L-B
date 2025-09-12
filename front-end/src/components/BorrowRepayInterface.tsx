@@ -388,6 +388,8 @@ export default function BorrowRepayInterface({ positions, provider, addresses, o
       fetchWalletNFTs();
     } catch (err) {
       console.error('❌ handleAppraise error:', err);
+      // Clear pending to avoid locking the UI on failures
+      setWalletNfts(prev => prev.map(n => n.id === nftId ? { ...n, pending: false } : n));
       fetchWalletNFTs();
       handleError(err);
     }

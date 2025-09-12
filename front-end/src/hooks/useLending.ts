@@ -75,7 +75,8 @@ export function useLending(provider: any, addresses: Record<string, string>) {
         retryContractCall(() => contracts.lendingPool.read('getTotalBorrows')),
         retryContractCall(() => contracts.lendingPool.read('getCurrentInterestRate')),
         retryContractCall(() => contracts.lendingPool.read('getUtilizationRate')),
-        retryContractCall(() => contracts.lendingPool.read('getUserDeposits', new massa.Args().addString(provider.address).serialize()))
+        // NOTE: getUserDeposits in contract expects raw string bytes, not Args serialization
+        retryContractCall(() => contracts.lendingPool.read('getUserDeposits', new TextEncoder().encode(provider.address)))
       ]);
 
       const totalDeposits = safeParseU64(totalDepositsResult);

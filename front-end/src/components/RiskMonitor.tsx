@@ -8,6 +8,7 @@ import { REFRESH_INTERVALS } from '../utils/constants';
 interface RiskMonitorProps {
   provider: any;
   addresses: Record<string, string>;
+  tokenId?: number; // optional: when provided, chart follows this NFT's valuation
 }
 
 interface RiskData {
@@ -20,7 +21,7 @@ interface RiskData {
   isLoading: boolean;
 }
 
-export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
+export default function RiskMonitor({ provider, addresses, tokenId }: RiskMonitorProps) {
   const contracts = useContracts(provider, addresses);
   const [riskData, setRiskData] = useState<RiskData>({
     currentPrice: '0',
@@ -53,7 +54,7 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
     refreshData();
     const interval = setInterval(refreshData, REFRESH_INTERVALS.FAST);
     return () => clearInterval(interval);
-  }, [contracts.oracle, contracts.riskManager]);
+  }, [contracts.oracle, contracts.riskManager, contracts.collateralVault, tokenId]);
 
   const safeParseU64 = (result: any, defaultValue: string = '0'): string => {
     try {
@@ -97,31 +98,41 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
     }
 
     try {
-      const [
-        priceResult,
-        twapResult,
-        volatilityResult,
-        lastUpdateResult,
-        evaluationActiveResult,
-        highRiskResult
-      ] = await Promise.all([
-        retryContractCall(() => contracts.oracle.read('getPrice')),
-        retryContractCall(() => contracts.oracle.read('getTwap')),
-        retryContractCall(() => contracts.oracle.read('getVolatility')),
-        retryContractCall(() => contracts.oracle.read('getLastUpdate')),
-        retryContractCall(() => contracts.riskManager.read('isEvaluationActive')),
-        retryContractCall(() => contracts.riskManager.read('getHighRiskPositions'))
-      ]);
+      // If a tokenId is provided, show its valuation as the main series using vault (refreshed by ASC)
+      let currentPrice = '0', twapPrice = '0', volatility = '0', lastUpdate = '0';
+      let evaluationActive = false; let highRiskPositions = '';
+      if (typeof tokenId === 'number' && contracts.collateralVault) {
+        const [valRes, evalActiveRes] = await Promise.all([
+          retryContractCall(() => contracts.collateralVault!.read('getNFTValue', new massa.Args().addU64(BigInt(tokenId)).serialize())),
+          retryContractCall(() => contracts.riskManager.read('isEvaluationActive')),
+        ]);
+        currentPrice = safeParseU64(valRes, '0');
+        evaluationActive = safeParseBoolean(evalActiveRes, false);
+      } else {
+        const [
+          priceResult,
+          twapResult,
+          volatilityResult,
+          lastUpdateResult,
+          evaluationActiveResult,
+          highRiskResult
+        ] = await Promise.all([
+          retryContractCall(() => contracts.oracle.read('getPrice')),
+          retryContractCall(() => contracts.oracle.read('getTwap')),
+          retryContractCall(() => contracts.oracle.read('getVolatility')),
+          retryContractCall(() => contracts.oracle.read('getLastUpdate')),
+          retryContractCall(() => contracts.riskManager.read('isEvaluationActive')),
+          retryContractCall(() => contracts.riskManager.read('getHighRiskPositions'))
+        ]);
+        currentPrice = safeParseU64(priceResult, '1000000');
+        twapPrice = safeParseU64(twapResult, '1000000');
+        volatility = safeParseU64(volatilityResult, '100');
+        lastUpdate = safeParseU64(lastUpdateResult, '0');
+        evaluationActive = safeParseBoolean(evaluationActiveResult, false);
+        highRiskPositions = safeParseString(highRiskResult, '');
+      }
 
-      const currentPrice = safeParseU64(priceResult, '1000000');
-      const twapPrice = safeParseU64(twapResult, '1000000');
-      const volatility = safeParseU64(volatilityResult, '100');
-      const lastUpdate = safeParseU64(lastUpdateResult, '0');
-      const evaluationActive = safeParseBoolean(evaluationActiveResult, false);
-      const highRiskPositions = safeParseString(highRiskResult, '');
-
-      console.log('RAW EVAL BYTES', evaluationActiveResult.value)
-      console.log('PARSED FLAG', safeParseBoolean(evaluationActiveResult, false))
+      // Keep logs minimal; avoid referencing variables not set in NFT mode
       
       setRiskData({
         currentPrice,
@@ -134,7 +145,7 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
       });
 
       const currentTime = new Date().toLocaleTimeString();
-      const price = Number(currentPrice) / 1_000_000;
+      const price = typeof tokenId === 'number' ? Number(currentPrice) / 1_000_000_000 : Number(currentPrice) / 1_000_000;
       
       setPriceHistory(prev => {
         const newHistory = [...prev, { time: currentTime, price }];
@@ -159,7 +170,7 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
       },
       yAxis: {
         type: 'value',
-        name: 'Price ($)',
+        name: tokenId ? 'Price (MAS)' : 'Price ($)',
         nameTextStyle: { color: '#8B7355' },
         axisLine: { lineStyle: { color: '#8B7355' } },
         axisLabel: { color: '#8B7355' },
@@ -194,7 +205,7 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
           return result;
         }
       },
-      legend: { data: ['Current Price', 'TWAP'], textStyle: { color: '#8B7355' }, top: 10 }
+      legend: { data: [tokenId ? 'NFT Price' : 'Current Price', ...(tokenId ? [] : ['TWAP'])], textStyle: { color: '#8B7355' }, top: 10 }
     };
   };
 
