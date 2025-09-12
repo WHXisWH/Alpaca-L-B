@@ -134,34 +134,36 @@ async function main() {
     }
 
     case 'mintFromTemplate': {
-      const metadata = process.argv[3] || 'Test Real Estate NFT';
-      const value = process.argv[4] || '10000000'; // 10k MAS
-      const pd = process.argv[5] || '500'; // 5%
-      const lgd = process.argv[6] || '4000'; // 40%
+      const metadata = process.argv[3] || 'Luxury Residential NFT';
+      const assetType = process.argv[4] || 'luxury_residential';
+      const value = process.argv[5] || '50000000000'; // 50 MAS in nano
+      const pd = process.argv[6] || '80'; // 0.8% (80 basis points)
+      const lgd = process.argv[7] || '1500'; // 15% (1500 basis points)
       
-      console.log(`Minting NFT with metadata: "${metadata}", value: ${value}, PD: ${pd}, LGD: ${lgd}...`);
+      console.log(`Minting NFT with metadata: "${metadata}", asset type: ${assetType}...`);
 
       // 1. Get the token ID that will be minted
       const nextIdResult = await rwaNftContract.read('NEXT_ID');
       const tokenId = bytesToU64(nextIdResult.value);
 
-      // 2. Mint NFT
+      // 2. Mint NFT (basic mint with assetType)
       const mintArgs = new Args()
         .addString(account.address.toString())
-        .addString(metadata);
+        .addString(metadata)
+        .addString(assetType);
       const mintOp = await rwaNftContract.call('mint', mintArgs.serialize(), TX_GAS_LIMIT);
       await awaitOperationFinalization(mintOp);
       console.log(`✅ NFT Minted (Token ID: ${tokenId})`);
 
-      // 3. Set initial NFT profile in Oracle
-      console.log('Setting initial NFT profile in Oracle...');
-      const profileArgs = new Args()
+      // 3. Appraise the NFT with specified values
+      console.log('Appraising NFT with specified values...');
+      const appraiseArgs = new Args()
         .addU64(BigInt(tokenId))
         .addU64(BigInt(value))
         .addU64(BigInt(pd))
         .addU64(BigInt(lgd));
-      const profileOp = await oracleContract.call('setInitialNFTProfile', profileArgs.serialize(), TX_GAS_LIMIT);
-      await awaitOperationFinalization(profileOp);
+      const appraiseOp = await rwaNftContract.call('appraiseAsset', appraiseArgs.serialize(), TX_GAS_LIMIT);
+      await awaitOperationFinalization(appraiseOp);
       
       console.log('✅ Oracle updated successfully!');
       console.log(`

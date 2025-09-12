@@ -93,8 +93,8 @@ async function main() {
   }
 
   // After RWA_NFT is deployed, set its address in the Oracle
-  console.log('Setting RWA_NFT address in Oracle...');
-  const setNftAddrOp = await oracleContract.call('setRwaNftAddress', new massa.Args().addString(addresses.rwaNFT).serialize(), CALL_OPTIONS);
+  console.log('Setting RWA_NFT address in Oracle (via Governance)...');
+  const setNftAddrOp = await governanceContract.call('setRwaNftAddressInOracle', new massa.Args().addString(addresses.rwaNFT).serialize(), CALL_OPTIONS);
   await setNftAddrOp.waitFinalExecution();
 
   console.log('Step 4: Deploying CollateralVault contract...');
@@ -208,12 +208,12 @@ async function main() {
     const setLiqInRiskOp = await governanceContract.call('setLiquidationEngineInRiskManager', new massa.Args().addString(addresses.liquidationEngine).serialize(), CALL_OPTIONS);
     await setLiqInRiskOp.waitFinalExecution();
 
-    console.log('Adding deployer as authorized provider in Oracle...');
-    const addAuthOp = await oracleContract.call('addAuthorizedProvider', new massa.Args().addString(account.address.toString()).serialize(), CALL_OPTIONS);
-    await addAuthOp.waitFinalExecution();
+    console.log('Adding CollateralVault as authorized provider in Oracle (via Governance)...');
+    const addVaultProviderOp = await governanceContract.call('addAuthorizedProviderInOracle', new massa.Args().addString(addresses.collateralVault).serialize(), CALL_OPTIONS);
+    await addVaultProviderOp.waitFinalExecution();
 
-    console.log('Setting CollateralVault address in Oracle...');
-    const setVaultInOracleOp = await oracleContract.call('setCollateralVault', new massa.Args().addString(addresses.collateralVault).serialize(), CALL_OPTIONS);
+    console.log('Setting CollateralVault address in Oracle (via Governance)...');
+    const setVaultInOracleOp = await governanceContract.call('setCollateralVaultInOracle', new massa.Args().addString(addresses.collateralVault).serialize(), CALL_OPTIONS);
     await setVaultInOracleOp.waitFinalExecution();
     
     console.log('✅ Contract connections configured');

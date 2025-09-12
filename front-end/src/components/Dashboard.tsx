@@ -73,11 +73,11 @@ export default function Dashboard({ provider, addresses, onBalanceChange }: Dash
                 </div>
                 <div className="stat-card">
                     <div className="stat-label">My Borrows</div>
-                    <div className="stat-value">{userSummary.totalUserBorrows.toFixed(4)} MAS</div>
+                    <div className="stat-value">{userSummary.totalUserBorrows.toFixed(2)} MAS</div>
                 </div>
                 <div className="stat-card">
                     <div className="stat-label">My Collateral</div>
-                    <div className="stat-value">{userSummary.totalCollateralValue.toFixed(4)} MAS</div>
+                    <div className="stat-value">{userSummary.totalCollateralValue.toFixed(2)} MAS</div>
                 </div>
                 <div className="stat-card">
                     <div className="stat-label">Health Factor</div>
@@ -111,7 +111,7 @@ export default function Dashboard({ provider, addresses, onBalanceChange }: Dash
           {renderTabContent()}
         </div>
 
-        <RiskMonitor provider={provider} addresses={addresses} />
+        {/* <RiskMonitor provider={provider} addresses={addresses} /> */}
       </div>
     </div>
   );

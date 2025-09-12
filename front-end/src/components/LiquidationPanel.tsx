@@ -56,8 +56,15 @@ export default function LiquidationPanel({ provider, addresses }: LiquidationPan
       }
       return new massa.Args(result.value).nextString();
     } catch (error) {
-      console.log(`${fieldName}: Parse error, using default`, error);
-      return defaultValue;
+      try {
+        // Fallback to TextDecoder
+        const textValue = new TextDecoder().decode(result.value) || defaultValue;
+        console.log(`${fieldName}: Used TextDecoder fallback:`, textValue);
+        return textValue;
+      } catch (fallbackError) {
+        console.log(`${fieldName}: Both parsing methods failed, using default`, error, fallbackError);
+        return defaultValue;
+      }
     }
   };
 
@@ -75,6 +82,22 @@ export default function LiquidationPanel({ provider, addresses }: LiquidationPan
     }
   };
 
+  // Retry wrapper for contract calls with longer timeout
+  const retryContractCall = async (contractCall: () => Promise<any>, maxRetries: number = 5): Promise<any> => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await contractCall();
+      } catch (error) {
+        if (attempt === maxRetries) {
+          throw error;
+        }
+        console.warn(`Liquidation contract call attempt ${attempt} failed, retrying...`, error);
+        // Progressive delay with longer waits
+        await new Promise(resolve => setTimeout(resolve, Math.min(2000 * attempt, 10000)));
+      }
+    }
+  };
+
   const refreshData = async () => {
     if (!contracts.liquidationEngine) {
       setIsLoading(false);
@@ -82,83 +105,40 @@ export default function LiquidationPanel({ provider, addresses }: LiquidationPan
     }
 
     try {
-      const activeAuctionsResult = await contracts.liquidationEngine.read('getActiveAuctions');
-      const activeAuctionIds = safeParseString(activeAuctionsResult, 'activeAuctions', '');
-      
+      const auctionsResult = await retryContractCall(
+        () => contracts.liquidationEngine.read('getActiveAuctionsDetails')
+      );
+      const auctionsData = safeParseString(auctionsResult, 'auctionsData');
       const auctions: Auction[] = [];
-      if (activeAuctionIds && activeAuctionIds !== '') {
-        const auctionIds = activeAuctionIds.split(',');
-        
-        for (const auctionId of auctionIds) {
-          if (auctionId.trim() === '') continue;
-          
-          try {
-            const auctionResult = await contracts.liquidationEngine.read(
-              'getAuction', 
-              new massa.Args().addU64(BigInt(auctionId)).serialize()
-            );
-            const auctionData = safeParseString(auctionResult, `auction_${auctionId}`, '');
-            
-            if (auctionData && auctionData !== '') {
-              const parts = auctionData.split(':');
-              if (parts.length >= 6) {
-                auctions.push({
-                  id: parseInt(auctionId),
-                  tokenId: parseInt(parts[0]),
-                  startingPrice: parts[1],
-                  endTime: parseInt(parts[2]),
-                  highestBid: parts[3],
-                  startTime: parseInt(parts[4]),
-                  isActive: parts[5] === 'true',
-                  winner: parts.length > 6 ? parts[6] : undefined
-                });
-              }
-            }
-          } catch (error) {
-            console.error(`Failed to fetch auction ${auctionId}:`, error);
+
+      if (auctionsData && auctionsData !== '') {
+        const auctionEntries = auctionsData.split('|');
+        for (const entry of auctionEntries) {
+          const parts = entry.split(':');
+          if (parts.length >= 7) { // auctionId:tokenId:startingPrice:endTime:highestBid:startTime:isActive:winner?
+            auctions.push({
+              id: parseInt(parts[0]),
+              tokenId: parseInt(parts[1]),
+              startingPrice: parts[2],
+              endTime: parseInt(parts[3]),
+              highestBid: parts[4],
+              startTime: parseInt(parts[5]),
+              isActive: parts[6] === 'true',
+              winner: parts.length > 7 ? parts[7] : undefined
+            });
           }
-        }
-      }
-      
-      const totalLiquidationsResult = await contracts.liquidationEngine.read('getTotalLiquidations');
-      const totalLiquidations = safeParseU64(totalLiquidationsResult, 'totalLiquidations', '0');
-      
-      const liquidations: Liquidation[] = [];
-      const maxToFetch = Math.min(Number(totalLiquidations), 10);
-      
-      for (let i = Math.max(1, Number(totalLiquidations) - maxToFetch + 1); i <= Number(totalLiquidations); i++) {
-        try {
-          const liquidationResult = await contracts.liquidationEngine.read(
-            'getLiquidation',
-            new massa.Args().addU64(BigInt(i)).serialize()
-          );
-          const liquidationData = safeParseString(liquidationResult, `liquidation_${i}`, '');
-          
-          if (liquidationData && liquidationData !== '') {
-            const parts = liquidationData.split(':');
-            if (parts.length >= 5) {
-              liquidations.push({
-                id: i,
-                borrower: parts[0],
-                tokenId: parseInt(parts[1]),
-                debt: parts[2],
-                collateralValue: parts[3],
-                timestamp: parseInt(parts[4])
-              });
-            }
-          }
-        } catch (error) {
-          console.error(`Failed to fetch liquidation ${i}:`, error);
         }
       }
 
       setActiveAuctions(auctions);
-      setRecentLiquidations(liquidations.reverse());
+      // Temporarily disable fetching recent liquidations to focus on auction performance
+      setRecentLiquidations([]); 
       setIsLoading(false);
 
     } catch (error) {
       console.error('Failed to fetch liquidation data:', error);
       setIsLoading(false);
+      // Don't clear existing auctions, just keep the current state for better UX
     }
   };
 

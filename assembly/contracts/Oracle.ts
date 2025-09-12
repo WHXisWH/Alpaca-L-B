@@ -37,9 +37,11 @@ export function constructor(argsData: StaticArray<u8>): void {
 
 // New function to be called by RWA_NFT contract
 export function setInitialNFTProfileFromString(argsData: StaticArray<u8>): void {
-  // Permission check: Only RWA_NFT contract can call this
+  // Permission check: RWA_NFT or authorized providers can call this
+  const caller = Context.caller().toString();
   const rwaNftAddress = bytesToString(Storage.get(RWA_NFT_KEY));
-  assert(Context.caller().toString() == rwaNftAddress, "Only RWA_NFT contract can set initial profile");
+  const authorizedProviders = bytesToString(Storage.get(AUTHORIZED_PROVIDERS_KEY));
+  assert(caller == rwaNftAddress || authorizedProviders.includes(caller), "Not authorized to set initial profile");
 
   const packedData = bytesToString(argsData);
   const parts = packedData.split(':');

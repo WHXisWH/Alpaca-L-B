@@ -4,7 +4,7 @@ import { useContracts } from '../hooks/useContracts';
 import { formatMAS, getErrorMessage, validateAmount, getRiskLevel, formatTimestamp } from '../utils/massa';
 import { toast } from 'react-hot-toast';
 import { TRANSACTION_STATES } from '../utils/constants';
-import { nftLibrary } from '../utils/nft-library';
+import { RWA_CATEGORIES, AssetTemplate, getTemplateById, formatMASValue, formatRiskParams } from '../utils/rwaTemplates';
 
 // --- Reusable Health Factor Component ---
 const HealthFactorBar = ({ ltv }: { ltv: number }) => {
@@ -40,7 +40,9 @@ interface UnifiedNFT {
   value: string;
   pd: string;
   lgd: string;
+  assetType: string;
   status: 'Available' | 'Deposited' | 'In Use';
+  pending?: boolean;
 }
 
 // Helper function to calculate max borrow based on LTV
@@ -59,44 +61,205 @@ export default function BorrowRepayInterface({ positions, provider, addresses, o
   const [error, setError] = useState('');
   const [showMintModal, setShowMintModal] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [walletLoading, setWalletLoading] = useState(false);
   const [walletNfts, setWalletNfts] = useState<UnifiedNFT[]>([]);
   const [borrowAmount, setBorrowAmount] = useState('');
   const [repayAmount, setRepayAmount] = useState('');
 
   const contracts = useContracts(provider, addresses);
 
-  // Fetch NFTs from the user's wallet
+  // Helper function for safe string parsing with retry
+  const safeParseString = (result: any, fallbackValue: string = ''): string => {
+    try {
+      if (!result || !result.value || result.value.length === 0) {
+        return fallbackValue;
+      }
+      return new massa.Args(result.value).nextString();
+    } catch (error) {
+      try {
+        // Fallback to TextDecoder
+        return new TextDecoder().decode(result.value) || fallbackValue;
+      } catch (fallbackError) {
+        console.warn('Both parsing methods failed, using fallback:', error, fallbackError);
+        return fallbackValue;
+      }
+    }
+  };
+
+  // Retry wrapper for contract calls with longer timeout  
+  const retryContractCall = async (contractCall: () => Promise<any>, maxRetries: number = 5): Promise<any> => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await contractCall();
+      } catch (error) {
+        if (attempt === maxRetries) {
+          throw error;
+        }
+        console.warn(`BorrowRepay contract call attempt ${attempt} failed, retrying...`, error);
+        // Progressive delay with longer waits
+        await new Promise(resolve => setTimeout(resolve, Math.min(2000 * attempt, 10000)));
+      }
+    }
+  };
+
+  // NFT fetching: batch first, fallback to dynamic scan; also fetch assetType
   const fetchWalletNFTs = useCallback(async () => {
     if (!contracts.rwaNFT || !provider) return;
+
+    console.log('🔍 fetchWalletNFTs started...');
+    setWalletLoading(true);
     const userAddress = provider.address;
+    console.log('👤 User address:', userAddress);
     const nfts: UnifiedNFT[] = [];
+
+    // 1) Try batch fetch
     try {
-      const balanceStr = await contracts.rwaNFT.read('balanceOf', new massa.Args().addString(userAddress).serialize());
-      const balance = new massa.Args(balanceStr.value).nextU64();
+      const batchResult = await retryContractCall(() =>
+        contracts.rwaNFT!.read('getNftsOfOwner', new massa.Args().addString(userAddress).serialize())
+      );
+      const batchData = new TextDecoder().decode(batchResult.value || new Uint8Array());
+      if (batchData && batchData !== '') {
+        const entries = batchData.split('|');
+        for (const e of entries) {
+          if (!e) continue;
+          const parts = e.split(':');
+          if (parts.length < 4) continue;
+          const tokenId = parseInt(parts[0]);
+          const value = parts[1];
+          const pd = parts[2];
+          const lgd = parts[3];
 
-      for (let i = 0; i < balance; i++) {
-        const tokenIdStr = await contracts.rwaNFT.read('tokenOfOwnerByIndex', new massa.Args().addString(userAddress).addU64(BigInt(i)).serialize());
-        const tokenId = new massa.Args(tokenIdStr.value).nextU64();
-        
-        const [valueResult, pdResult, lgdResult] = await Promise.all([
-            contracts.oracle.read('getNFTValuation', new massa.Args().addU64(tokenId).serialize()),
-            contracts.oracle.read('getNFTPD', new massa.Args().addU64(tokenId).serialize()),
-            contracts.oracle.read('getNFTLGD', new massa.Args().addU64(tokenId).serialize())
-        ]);
+          // asset type
+          let assetType = 'unknown';
+          try {
+            const atRes = await retryContractCall(() =>
+              contracts.rwaNFT!.read('getAssetType', new massa.Args().addU64(BigInt(tokenId)).serialize())
+            );
+            assetType = new TextDecoder().decode(atRes.value || new Uint8Array()) || 'unknown';
+          } catch {}
 
-        nfts.push({
-            id: Number(tokenId),
-            value: new massa.Args(valueResult.value).nextU64().toString(),
-            pd: new massa.Args(pdResult.value).nextU64().toString(),
-            lgd: new massa.Args(lgdResult.value).nextU64().toString(),
-            status: 'Available'
+          // deposit status
+          let isDeposited = false;
+          if (contracts.collateralVault) {
+            try {
+              const dRes = await retryContractCall(() =>
+                contracts.collateralVault!.read('isNFTDeposited', new massa.Args().addU64(BigInt(tokenId)).serialize())
+              );
+              isDeposited = new TextDecoder().decode(dRes.value || new Uint8Array()) === 'true';
+            } catch {}
+          }
+
+          nfts.push({
+            id: tokenId,
+            value,
+            pd,
+            lgd,
+            assetType,
+            status: isDeposited ? 'Deposited' : 'Available'
+          });
+        }
+        // Merge to avoid flicker; if existing is pending, keep optimistic snapshot
+        setWalletNfts(prev => {
+          const map = new Map<number, UnifiedNFT>();
+          prev.forEach(it => map.set(it.id, it));
+          nfts.forEach(it => {
+            const existing = map.get(it.id);
+            if (existing && existing.pending) {
+              map.set(it.id, { ...existing, status: it.status } as UnifiedNFT);
+            } else {
+              map.set(it.id, { ...existing, ...it, pending: false } as UnifiedNFT);
+            }
+          });
+          return Array.from(map.values()).sort((a, b) => a.id - b.id);
         });
+        setWalletLoading(false);
+        return;
       }
-      setWalletNfts(nfts);
-    } catch (e) {
-      console.error("Failed to fetch wallet NFTs", e);
+    } catch (err) {
+      console.warn('Batch fetch failed, falling back to scan:', err);
     }
-  }, [contracts.rwaNFT, contracts.oracle, provider]);
+
+    // 2) Fallback: dynamic scan up to NEXT_ID-1 (cap at 50)
+    try {
+      let maxId = 50;
+      try {
+        const nextIdRes = await retryContractCall(() => contracts.rwaNFT!.read('NEXT_ID'));
+        const nextId = new massa.Args(nextIdRes.value).nextU64();
+        const nextIdNum = Number(nextId);
+        if (nextIdNum > 1) {
+          maxId = Math.min(nextIdNum - 1, 50);
+        }
+      } catch {}
+
+      for (let i = 1; i <= maxId; i++) {
+        try {
+          const ownerResult = await retryContractCall(() =>
+            contracts.rwaNFT!.read('ownerOf', new massa.Args().addU64(BigInt(i)).serialize())
+          );
+          const owner = new TextDecoder().decode(ownerResult.value || new Uint8Array());
+          if (!owner || owner !== userAddress) continue;
+
+          const [valueResult, pdResult, lgdResult] = await Promise.all([
+            retryContractCall(() => contracts.rwaNFT!.read('getNFTValuation', new massa.Args().addU64(BigInt(i)).serialize())),
+            retryContractCall(() => contracts.rwaNFT!.read('getNFTPD', new massa.Args().addU64(BigInt(i)).serialize())),
+            retryContractCall(() => contracts.rwaNFT!.read('getNFTLGD', new massa.Args().addU64(BigInt(i)).serialize())),
+          ]);
+
+          const value = new massa.Args(valueResult.value).nextU64();
+          const pd = new massa.Args(pdResult.value).nextU64();
+          const lgd = new massa.Args(lgdResult.value).nextU64();
+
+          // asset type
+          let assetType = 'unknown';
+          try {
+            const atRes = await retryContractCall(() =>
+              contracts.rwaNFT!.read('getAssetType', new massa.Args().addU64(BigInt(i)).serialize())
+            );
+            assetType = new TextDecoder().decode(atRes.value || new Uint8Array()) || 'unknown';
+          } catch {}
+
+          // deposit status
+          let isDeposited = false;
+          if (contracts.collateralVault) {
+            try {
+              const dRes = await retryContractCall(() =>
+                contracts.collateralVault!.read('isNFTDeposited', new massa.Args().addU64(BigInt(i)).serialize())
+              );
+              isDeposited = new TextDecoder().decode(dRes.value || new Uint8Array()) === 'true';
+            } catch {}
+          }
+
+          nfts.push({
+            id: i,
+            value: value.toString(),
+            pd: pd.toString(),
+            lgd: lgd.toString(),
+            assetType,
+            status: isDeposited ? 'Deposited' : 'Available'
+          });
+        } catch {
+          // ignore missing IDs
+        }
+      }
+
+      setWalletNfts(prev => {
+        const map = new Map<number, UnifiedNFT>();
+        prev.forEach(it => map.set(it.id, it));
+        nfts.forEach(it => {
+          const existing = map.get(it.id);
+          if (existing && existing.pending) {
+            map.set(it.id, { ...existing, status: it.status } as UnifiedNFT);
+          } else {
+            map.set(it.id, { ...existing, ...it, pending: false } as UnifiedNFT);
+          }
+        });
+        return Array.from(map.values()).sort((a, b) => a.id - b.id);
+      });
+    } catch (e) {
+      console.error('Failed to fetch wallet NFTs via fallback scan', e);
+    }
+    setWalletLoading(false);
+  }, [contracts.rwaNFT, contracts.collateralVault, provider]);
 
   // Combine deposited and wallet NFTs into a single list
   const unifiedNFTs = useMemo(() => {
@@ -106,7 +269,14 @@ export default function BorrowRepayInterface({ positions, provider, addresses, o
     if (positions.userCollaterals) {
       positions.userCollaterals.forEach((col: any) => {
         const isInUse = positions.userPositions.some((p: any) => p.tokenId === col.id && p.isActive);
-        allNFTs.push({ id: col.id, value: col.value, pd: col.pd, lgd: col.lgd, status: isInUse ? 'In Use' : 'Deposited' });
+        allNFTs.push({ 
+          id: col.id, 
+          value: col.value, 
+          pd: col.pd, 
+          lgd: col.lgd, 
+          assetType: col.assetType || 'unknown',
+          status: isInUse ? 'In Use' : 'Deposited' 
+        });
         seenIds.add(col.id);
       });
     }
@@ -120,13 +290,16 @@ export default function BorrowRepayInterface({ positions, provider, addresses, o
     return allNFTs.sort((a, b) => a.id - b.id);
   }, [positions.userCollaterals, positions.userPositions, walletNfts]);
 
-  // Effects
+  // Effects - start fetching immediately, don't wait for positions
+  useEffect(() => {
+    fetchWalletNFTs();
+  }, [fetchWalletNFTs]);
+  
   useEffect(() => {
     if (!positions.isLoading) {
       setIsLoading(false);
-      fetchWalletNFTs();
     }
-  }, [positions.isLoading, fetchWalletNFTs]);
+  }, [positions.isLoading]);
 
   // Handlers
   const handleSuccess = (message: string) => {
@@ -144,13 +317,80 @@ export default function BorrowRepayInterface({ positions, provider, addresses, o
     setTransactionState(TRANSACTION_STATES.IDLE);
   }
 
-  const handleMint = async (template: typeof nftLibrary[0]) => {
+  const handleMint = async (template: AssetTemplate) => {
     setTransactionState(TRANSACTION_STATES.PENDING);
     setShowMintModal(false);
     try {
-      const newId = await positions.mintNFT(template.metadata, template.value, template.pd, template.lgd);
-      handleSuccess(`NFT #${newId} minted!`);
-    } catch (err) { handleError(err); }
+      // Optimistic pending card using NEXT_ID
+      try {
+        if (contracts.rwaNFT) {
+          const nextIdRes = await contracts.rwaNFT.read('NEXT_ID');
+          const nextId = new massa.Args(nextIdRes.value).nextU64();
+          const optimisticId = Number(nextId);
+          setWalletNfts(prev => {
+            if (prev.some(n => n.id === optimisticId)) return prev;
+            return [
+              ...prev,
+              {
+                id: optimisticId,
+                value: '0',
+                pd: '0',
+                lgd: '0',
+                assetType: template.id,
+                status: 'Available' as 'Available',
+                pending: true,
+              } as UnifiedNFT,
+            ].sort((a, b) => a.id - b.id);
+          });
+        }
+      } catch {}
+
+      const newId = await positions.mintNFT(template.name, template.id);
+      handleSuccess(`${template.emoji} ${template.name} NFT #${newId} minted! Ready for appraisal.`);
+      // Force refresh NFT data after successful mint
+      setTimeout(() => {
+        fetchWalletNFTs();
+      }, 2000);
+    } catch (err) { 
+      console.error('Mint failed:', err);
+      handleError(err); 
+    }
+  };
+
+  const handleAppraise = async (nftId: number, assetType: string) => {
+    console.log(`🎯 handleAppraise called for NFT #${nftId}, assetType: ${assetType}`);
+    setTransactionState(TRANSACTION_STATES.PENDING);
+    try {
+      // Find the template for this asset type
+      const template = getTemplateById(assetType);
+      console.log('📋 Found template:', template);
+      if (!template) throw new Error('Template not found for asset type: ' + assetType);
+
+      console.log('🔥 About to call positions.appraiseNFT with:', {
+        nftId,
+        value: template.value.toString(),
+        pd: template.pd,
+        lgd: template.lgd
+      });
+
+      // Optimistic change of values and pending flag
+      setWalletNfts(prev => prev.map(n => n.id === nftId ? { ...n, value: template.value.toString(), pd: template.pd.toString(), lgd: template.lgd.toString(), pending: true } : n));
+
+      const opId = await positions.appraiseNFT(
+        nftId,
+        template.value.toString(),
+        template.pd,
+        template.lgd
+      );
+      handleSuccess(`🎯 NFT #${nftId} appraised successfully! ${template.emoji} Value: ${formatMASValue(template.value)} MAS${opId ? ` (op: ${opId})` : ''}`);
+      setWalletNfts(prev => prev.map(n => n.id === nftId ? { ...n, pending: false } : n));
+      // Light refresh without Oracle polling
+      fetchWalletNFTs();
+    } catch (err) {
+      console.error('❌ handleAppraise error:', err);
+      fetchWalletNFTs();
+      handleError(err);
+    }
   };
 
   const handleDepositAndBorrow = async () => {
@@ -258,21 +498,84 @@ export default function BorrowRepayInterface({ positions, provider, addresses, o
     <>
       {showMintModal && (
          <div className="modal-overlay" onClick={() => setShowMintModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
-            <div className="modal-header"><h2 className="modal-title">Mint a Demo RWA-NFT</h2><button className="close-btn" onClick={() => setShowMintModal(false)}>×</button></div>
-            <div className="nft-template-grid">
-              {nftLibrary.map((template) => (
-                <div key={template.id} className="nft-template-card">
-                  <h3>{template.name}</h3><p>{template.description}</p>
-                  <div className="template-details">
-                    <span>Value: {formatMAS(template.value)} MAS</span>
-                    <span>PD: {(Number(template.pd) / 100).toFixed(2)}%</span>
-                    <span>LGD: {(Number(template.lgd) / 100).toFixed(2)}%</span>
-                  </div>
-                  <button className="btn btn-primary btn-small" onClick={() => handleMint(template)} disabled={isTransacting}>{isTransacting ? 'Minting...' : 'Mint This NFT'}</button>
-                </div>
-              ))}
+          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: '90vw', maxHeight: '90vh', overflow: 'auto' }}>
+            <div className="modal-header">
+              <h2 className="modal-title">🏦 Mint Real World Asset NFT</h2>
+              <button className="close-btn" onClick={() => setShowMintModal(false)}>×</button>
             </div>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '20px' }}>
+              Select an asset type to mint. After minting, you can appraise the asset with one click.
+            </p>
+            
+            {RWA_CATEGORIES.map((category) => (
+              <div key={category.id} className="category-section" style={{ marginBottom: '24px' }}>
+                <h3 style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '8px',
+                  marginBottom: '12px',
+                  color: 'var(--primary)',
+                  fontSize: '1.1em'
+                }}>
+                  <span style={{ fontSize: '1.2em' }}>{category.emoji}</span>
+                  {category.name}
+                </h3>
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.9em', marginBottom: '16px' }}>
+                  {category.description}
+                </p>
+                
+                <div className="nft-template-grid" style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', 
+                  gap: '12px',
+                  marginBottom: '16px'
+                }}>
+                  {category.templates.map((template) => (
+                    <div key={template.id} className="nft-template-card" style={{
+                      padding: '16px',
+                      border: '1px solid var(--border)',
+                      borderRadius: '8px',
+                      backgroundColor: 'var(--surface-light)'
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                        <span style={{ fontSize: '1.5em' }}>{template.emoji}</span>
+                        <h4 style={{ margin: 0, fontSize: '1em' }}>{template.name}</h4>
+                      </div>
+                      <p style={{ 
+                        color: 'var(--text-secondary)', 
+                        fontSize: '0.85em', 
+                        marginBottom: '12px',
+                        lineHeight: '1.4'
+                      }}>
+                        {template.description}
+                      </p>
+                      <div className="template-details" style={{ 
+                        display: 'flex', 
+                        flexDirection: 'column', 
+                        gap: '4px',
+                        marginBottom: '12px',
+                        fontSize: '0.85em'
+                      }}>
+                        <span style={{ fontWeight: '600', color: 'var(--primary)' }}>
+                          💰 {formatMASValue(template.value)} MAS
+                        </span>
+                        <span style={{ color: 'var(--text-secondary)' }}>
+                          {formatRiskParams(template.pd, template.lgd)}
+                        </span>
+                      </div>
+                      <button 
+                        className="btn btn-primary btn-small" 
+                        onClick={() => handleMint(template)} 
+                        disabled={isTransacting}
+                        style={{ width: '100%', fontSize: '0.85em' }}
+                      >
+                        {isTransacting ? 'Minting...' : `Mint ${template.emoji}`}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -281,8 +584,8 @@ export default function BorrowRepayInterface({ positions, provider, addresses, o
         <div className="stat-card">
           <div className="section-title">My Collateral NFTs</div>
           <button className="btn btn-primary" style={{width: '100%', marginBottom: '16px'}} onClick={() => setShowMintModal(true)} disabled={isTransacting}>{isTransacting ? 'Processing...' : 'Mint New Demo NFT'}</button>
-          {isLoading ? <div className="loading-spinner"></div> : unifiedNFTs.length === 0 ? (
-            <div className="empty-state"><span className="empty-state-icon">🖼️</span><h3>No RWA-NFTs Found</h3><p>Click the button above to mint a new demo NFT.</p></div>
+          {unifiedNFTs.length === 0 ? (
+            <div className="empty-state"><span className="empty-state-icon">🖼️</span><h3>No RWA-NFTs Found</h3><p>Click the button above to mint a new demo NFT.</p>{walletLoading && <p style={{color:'var(--text-secondary)'}}>Refreshing…</p>}</div>
           ) : (
             <div className="nft-list" style={{ maxHeight: '600px', overflowY: 'auto' }}>
               {unifiedNFTs.map(nft => {
@@ -295,12 +598,29 @@ export default function BorrowRepayInterface({ positions, provider, addresses, o
                     <div className="position-header">
                       <span className="position-id">NFT #{nft.id}</span>
                       <span className={`position-status status-${nft.status.toLowerCase()}`}>{nft.status}</span>
+                      {nft.pending && <span className="position-status" style={{ marginLeft: 8 }}>Pending</span>}
                     </div>
                     <div className="position-details">
                       <div className="detail-item"><span className="detail-label">Value</span><span className="detail-value">{formatMAS(nft.value)} MAS</span></div>
                       <div className="detail-item"><span className="detail-label">PD / LGD</span><span className="detail-value">{(Number(nft.pd) / 100).toFixed(2)}% / {(Number(nft.lgd) / 100).toFixed(2)}%</span></div>
                     </div>
-                    {nft.status === 'In Use' && <HealthFactorBar ltv={ltv} />}
+                    {nft.value === '0' ? (
+                      <div style={{ marginTop: '12px' }}>
+                        <button 
+                          className="btn btn-primary btn-small"
+                          style={{ width: '100%', fontSize: '0.85em' }}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleAppraise(nft.id, nft.assetType);
+                          }}
+                          disabled={isTransacting || nft.pending}
+                        >
+                          {isTransacting ? 'Appraising...' : '🎯 Appraise Asset'}
+                        </button>
+                      </div>
+                    ) : nft.status === 'In Use' ? (
+                      <HealthFactorBar ltv={ltv} />
+                    ) : null}
                   </div>
                 )
               })}

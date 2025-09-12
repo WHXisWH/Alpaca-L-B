@@ -66,6 +66,61 @@ export function setCollateralVault(argsData: StaticArray<u8>): void {
   generateEvent('Collateral vault address updated');
 }
 
+// ===== Oracle bridging helpers (owner -> oracle) =====
+export function setRwaNftAddressInOracle(argsData: StaticArray<u8>): void {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can set RWA NFT in Oracle");
+  const oracleAddress = bytesToString(Storage.get(ORACLE_KEY));
+  assert(oracleAddress != '', 'Oracle not set');
+  const cur_period = Context.currentPeriod();
+  const cur_thread = Context.currentThread();
+  let next_thread: u8 = cur_thread + 1;
+  let next_period = cur_period;
+  if (next_thread >= 32) {
+    ++next_period;
+    next_thread = 0;
+  }
+  sendMessage(new Address(oracleAddress), 'setRwaNftAddress', next_period, next_thread, next_period + 5, next_thread, 200_000_000, 0, 0, argsData);
+  generateEvent('setRwaNftAddressInOracle called');
+}
+
+export function setCollateralVaultInOracle(argsData: StaticArray<u8>): void {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can set vault in Oracle");
+  const oracleAddress = bytesToString(Storage.get(ORACLE_KEY));
+  assert(oracleAddress != '', 'Oracle not set');
+  const cur_period = Context.currentPeriod();
+  const cur_thread = Context.currentThread();
+  let next_thread: u8 = cur_thread + 1;
+  let next_period = cur_period;
+  if (next_thread >= 32) {
+    ++next_period;
+    next_thread = 0;
+  }
+  sendMessage(new Address(oracleAddress), 'setCollateralVault', next_period, next_thread, next_period + 5, next_thread, 200_000_000, 0, 0, argsData);
+  generateEvent('setCollateralVaultInOracle called');
+}
+
+export function addAuthorizedProviderInOracle(argsData: StaticArray<u8>): void {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can add oracle provider");
+  const oracleAddress = bytesToString(Storage.get(ORACLE_KEY));
+  assert(oracleAddress != '', 'Oracle not set');
+  const cur_period = Context.currentPeriod();
+  const cur_thread = Context.currentThread();
+  let next_thread: u8 = cur_thread + 1;
+  let next_period = cur_period;
+  if (next_thread >= 32) {
+    ++next_period;
+    next_thread = 0;
+  }
+  sendMessage(new Address(oracleAddress), 'addAuthorizedProvider', next_period, next_thread, next_period + 5, next_thread, 200_000_000, 0, 0, argsData);
+  generateEvent('addAuthorizedProviderInOracle called');
+}
+
 export function setLendingPoolInRiskManager(argsData: StaticArray<u8>): void {
   const owner = bytesToString(Storage.get(OWNER_KEY));
   const caller = Context.caller().toString();

@@ -33,6 +33,22 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
   });
   const [priceHistory, setPriceHistory] = useState<Array<{time: string, price: number}>>([]);
 
+  // Retry wrapper for contract calls with longer timeout
+  const retryContractCall = async (contractCall: () => Promise<any>, maxRetries: number = 5): Promise<any> => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await contractCall();
+      } catch (error) {
+        if (attempt === maxRetries) {
+          throw error;
+        }
+        console.warn(`Risk Monitor contract call attempt ${attempt} failed, retrying...`, error);
+        // Progressive delay with longer waits
+        await new Promise(resolve => setTimeout(resolve, Math.min(2000 * attempt, 10000)));
+      }
+    }
+  };
+
   useEffect(() => {
     refreshData();
     const interval = setInterval(refreshData, REFRESH_INTERVALS.FAST);
@@ -89,12 +105,12 @@ export default function RiskMonitor({ provider, addresses }: RiskMonitorProps) {
         evaluationActiveResult,
         highRiskResult
       ] = await Promise.all([
-        contracts.oracle.read('getPrice'),
-        contracts.oracle.read('getTwap'),
-        contracts.oracle.read('getVolatility'),
-        contracts.oracle.read('getLastUpdate'),
-        contracts.riskManager.read('isEvaluationActive'),
-        contracts.riskManager.read('getHighRiskPositions')
+        retryContractCall(() => contracts.oracle.read('getPrice')),
+        retryContractCall(() => contracts.oracle.read('getTwap')),
+        retryContractCall(() => contracts.oracle.read('getVolatility')),
+        retryContractCall(() => contracts.oracle.read('getLastUpdate')),
+        retryContractCall(() => contracts.riskManager.read('isEvaluationActive')),
+        retryContractCall(() => contracts.riskManager.read('getHighRiskPositions'))
       ]);
 
       const currentPrice = safeParseU64(priceResult, '1000000');

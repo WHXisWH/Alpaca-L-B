@@ -272,3 +272,28 @@ export function getWinningBidder(argsData: StaticArray<u8>): StaticArray<u8> {
   
   return stringToBytes('');
 }
+
+export function getActiveAuctionsDetails(_: StaticArray<u8>): StaticArray<u8> {
+    const activeAuctionsStr = bytesToString(Storage.get(ACTIVE_AUCTIONS_KEY));
+    if (activeAuctionsStr == '') {
+        return stringToBytes('');
+    }
+
+    const auctionIds = activeAuctionsStr.split(',');
+    let auctionDetails: string[] = [];
+
+    for (let i = 0; i < auctionIds.length; i++) {
+        if (auctionIds[i] == '') continue;
+        
+        const auctionId = U64.parseInt(auctionIds[i]);
+        const auctionKey = stringToBytes(AUCTION_PREFIX + auctionId.toString());
+        
+        if (Storage.has(auctionKey)) {
+            const auctionData = bytesToString(Storage.get(auctionKey));
+            auctionDetails.push(auctionId.toString() + ":" + auctionData);
+        }
+    }
+
+    const result = auctionDetails.join('|');
+    return stringToBytes(result);
+}

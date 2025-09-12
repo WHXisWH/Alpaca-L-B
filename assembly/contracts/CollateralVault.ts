@@ -1,4 +1,4 @@
-import { generateEvent, Storage, Context, Address } from '@massalabs/massa-as-sdk';
+import { generateEvent, Storage, Context, Address, sendMessage } from '@massalabs/massa-as-sdk';
 import { stringToBytes, bytesToString, u64ToBytes, bytesToU64, Args } from '@massalabs/as-types';
 
 const GOVERNANCE_KEY = stringToBytes('GOVERNANCE');
@@ -45,14 +45,56 @@ export function depositNFT(argsData: StaticArray<u8>): StaticArray<u8> {
   const depositedKey = stringToBytes(DEPOSITED_NFT_PREFIX + tokenId.toString());
   assert(!Storage.has(depositedKey), "NFT already deposited");
   
-  const valueResult = Storage.getOf(oracleContract, stringToBytes('NFT_VAL_' + tokenId.toString()));
-  const pdResult = Storage.getOf(oracleContract, stringToBytes('NFT_PD_' + tokenId.toString()));
-  const lgdResult = Storage.getOf(oracleContract, stringToBytes('NFT_LGD_' + tokenId.toString()));
-  
-  const value = bytesToU64(valueResult);
-  const pd = bytesToU64(pdResult);
-  const lgd = bytesToU64(lgdResult);
-  
+  // Try Oracle first
+  const oracleValKey = stringToBytes('NFT_VAL_' + tokenId.toString());
+  const oraclePdKey = stringToBytes('NFT_PD_' + tokenId.toString());
+  const oracleLgdKey = stringToBytes('NFT_LGD_' + tokenId.toString());
+
+  let value: u64 = 0;
+  let pd: u64 = 0;
+  let lgd: u64 = 0;
+
+  if (Storage.hasOf(oracleContract, oracleValKey)) {
+    value = bytesToU64(Storage.getOf(oracleContract, oracleValKey));
+  }
+  if (Storage.hasOf(oracleContract, oraclePdKey)) {
+    pd = bytesToU64(Storage.getOf(oracleContract, oraclePdKey));
+  }
+  if (Storage.hasOf(oracleContract, oracleLgdKey)) {
+    lgd = bytesToU64(Storage.getOf(oracleContract, oracleLgdKey));
+  }
+
+  // Fallback to RWA_NFT local storage if Oracle missing/uninitialized
+  if (value == 0) {
+    const nftValKey = stringToBytes('NFT_VAL_' + tokenId.toString());
+    const nftPdKey = stringToBytes('NFT_PD_' + tokenId.toString());
+    const nftLgdKey = stringToBytes('NFT_LGD_' + tokenId.toString());
+
+    if (Storage.hasOf(nftContract, nftValKey)) {
+      value = bytesToU64(Storage.getOf(nftContract, nftValKey));
+    }
+    if (Storage.hasOf(nftContract, nftPdKey)) {
+      pd = bytesToU64(Storage.getOf(nftContract, nftPdKey));
+    }
+    if (Storage.hasOf(nftContract, nftLgdKey)) {
+      lgd = bytesToU64(Storage.getOf(nftContract, nftLgdKey));
+    }
+
+    // If we obtained a valid value from NFT storage, initialize Oracle profile (Vault is an authorized provider)
+    if (value > 0) {
+      const packed = tokenId.toString() + ':' + value.toString() + ':' + pd.toString() + ':' + lgd.toString();
+      const cur_period = Context.currentPeriod();
+      const cur_thread = Context.currentThread();
+      let next_thread: u8 = cur_thread + 1;
+      let next_period = cur_period;
+      if (next_thread >= 32) {
+        ++next_period;
+        next_thread = 0;
+      }
+      sendMessage(oracleContract, 'setInitialNFTProfileFromString', next_period, next_thread, next_period + 5, next_thread, 200_000_000, 0, 0, stringToBytes(packed));
+    }
+  }
+
   assert(value > 0, "Invalid NFT value");
   
   Storage.set(depositedKey, stringToBytes('true'));

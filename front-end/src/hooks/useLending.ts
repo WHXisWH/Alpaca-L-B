@@ -26,6 +26,35 @@ export function useLending(provider: any, addresses: Record<string, string>) {
     error: null
   });
 
+  // Helper function for safe U64 parsing
+  const safeParseU64 = (result: any, fallbackValue: string = '0'): string => {
+    try {
+      if (!result || !result.value || result.value.length === 0) {
+        return fallbackValue;
+      }
+      return new massa.Args(result.value).nextU64().toString();
+    } catch (error) {
+      console.warn('Failed to parse U64 in useLending, using fallback:', error);
+      return fallbackValue;
+    }
+  };
+
+  // Retry wrapper for contract calls with longer timeout
+  const retryContractCall = async (contractCall: () => Promise<any>, maxRetries: number = 5): Promise<any> => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        return await contractCall();
+      } catch (error) {
+        if (attempt === maxRetries) {
+          throw error;
+        }
+        console.warn(`Lending contract call attempt ${attempt} failed, retrying...`, error);
+        // Progressive delay with longer waits
+        await new Promise(resolve => setTimeout(resolve, Math.min(2000 * attempt, 10000)));
+      }
+    }
+  };
+
   const refreshData = useCallback(async () => {
     if (!contracts.lendingPool || !provider) {
       setData(prev => ({ ...prev, isLoading: false }));
@@ -42,25 +71,25 @@ export function useLending(provider: any, addresses: Record<string, string>) {
         utilizationResult,
         userDepositsResult
       ] = await Promise.all([
-        contracts.lendingPool.read('getTotalDeposits'),
-        contracts.lendingPool.read('getTotalBorrows'),
-        contracts.lendingPool.read('getCurrentInterestRate'),
-        contracts.lendingPool.read('getUtilizationRate'),
-        contracts.lendingPool.read('getUserDeposits', new massa.Args().addString(provider.address).serialize())
+        retryContractCall(() => contracts.lendingPool.read('getTotalDeposits')),
+        retryContractCall(() => contracts.lendingPool.read('getTotalBorrows')),
+        retryContractCall(() => contracts.lendingPool.read('getCurrentInterestRate')),
+        retryContractCall(() => contracts.lendingPool.read('getUtilizationRate')),
+        retryContractCall(() => contracts.lendingPool.read('getUserDeposits', new massa.Args().addString(provider.address).serialize()))
       ]);
 
-      const totalDeposits = new massa.Args(totalDepositsResult.value).nextU64();
-      const totalBorrows = new massa.Args(totalBorrowsResult.value).nextU64();
-      const interestRate = new massa.Args(interestRateResult.value).nextU64();
-      const utilization = new massa.Args(utilizationResult.value).nextU64();
-      const userDeposits = new massa.Args(userDepositsResult.value).nextU64();
+      const totalDeposits = safeParseU64(totalDepositsResult);
+      const totalBorrows = safeParseU64(totalBorrowsResult);
+      const interestRate = safeParseU64(interestRateResult);
+      const utilization = safeParseU64(utilizationResult);
+      const userDeposits = safeParseU64(userDepositsResult);
 
       setData({
-        totalDeposits: totalDeposits.toString(),
-        totalBorrows: totalBorrows.toString(),
-        currentInterestRate: interestRate.toString(),
-        utilizationRate: utilization.toString(),
-        userDeposits: userDeposits.toString(),
+        totalDeposits: totalDeposits,
+        totalBorrows: totalBorrows,
+        currentInterestRate: interestRate,
+        utilizationRate: utilization,
+        userDeposits: userDeposits,
         isLoading: false,
         error: null
       });

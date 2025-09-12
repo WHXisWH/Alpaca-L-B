@@ -22,8 +22,6 @@ A cutting-edge DeFi lending platform built on Massa blockchain, leveraging Auton
 - **Visual Health Factor**: At-a-glance risk management with a visual health meter for every loan, preventing unexpected liquidations.
 - **'s Position' Dashboard**: A personalized dashboard module summarizing a user's total collateral, borrows, deposits, and overall account health.
 
-*Suggestion: Add a screenshot of the new Borrow & Repay interface here.*
-`![New Borrow/Repay Interface](placeholder-ui.png)`
 
 ## 🏗️ System Architecture
 
@@ -83,11 +81,12 @@ graph TB
 
 | Contract | Purpose | Key Functions | ASC Features |
 |----------|---------|---------------|--------------|
+| **RWA_NFT** | RWA-backed NFT handling | `mint()`, `getNftsOfOwner()` | None |
 | **CollateralVault** | NFT collateral management | `depositNFT()`, `withdrawNFT()` | None |
 | **LendingPool** | Core lending operations | `deposit()`, `borrow()`, `repay()` | `accrueInterest()` every 15min |
 | **RiskManager** | Dynamic LTV calculation | `calculateLTV()`, `evaluate()` | `evaluate()` every 1hr |
-| **LiquidationEngine** | Automated liquidations | `liquidate()`, `bid()`, `finalizeAuction()` | `checkAndLiquidate()` on trigger |
-| **Oracle** | Price feed management | `updatePrice()`, `getTwap()` | None (external updates) |
+| **LiquidationEngine** | Automated liquidations | `bid()`, `getActiveAuctionsDetails()` | `checkAndLiquidate()` on trigger |
+| **Oracle** | Price feed management | `updatePrice()`, `getTwap()` | `startUpdates()` autonomous price feeds |
 | **Governance** | Protocol governance | `setParameters()`, `pause()` | None |
 
 ## 💰 Economic Model
