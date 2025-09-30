@@ -16,6 +16,10 @@ const POSITION_COUNT_KEY = stringToBytes('POSITION_COUNT');
 const ACCRUAL_ACTIVE_KEY = stringToBytes('ACCRUAL_ACTIVE');
 const ACTIVE_POSITIONS_KEY = stringToBytes('ACTIVE_POSITIONS');
 const LAST_INTEREST_UPDATE_PREFIX = 'LAST_UPDATE_';
+const BASE_RATE_KEY = stringToBytes('BASE_RATE');
+const RATE_SLOPE_KEY = stringToBytes('RATE_SLOPE');
+const MIN_BORROW_KEY = stringToBytes('MIN_BORROW');
+const ACCRUAL_SLOTS_KEY = stringToBytes('ACCRUAL_SLOTS');
 
 export function constructor(argsData: StaticArray<u8>): void {
   assert(Context.isDeployingContract(), "Constructor can only be called during deployment");
@@ -36,6 +40,10 @@ export function constructor(argsData: StaticArray<u8>): void {
   Storage.set(POSITION_COUNT_KEY, u64ToBytes(0));
   Storage.set(ACCRUAL_ACTIVE_KEY, stringToBytes('false'));
   Storage.set(ACTIVE_POSITIONS_KEY, stringToBytes(''));
+  Storage.set(BASE_RATE_KEY, u64ToBytes(BASE_INTEREST_RATE));
+  Storage.set(RATE_SLOPE_KEY, u64ToBytes(INTEREST_RATE_SLOPE));
+  Storage.set(MIN_BORROW_KEY, u64ToBytes(MIN_BORROW_AMOUNT));
+  Storage.set(ACCRUAL_SLOTS_KEY, u64ToBytes(INTEREST_ACCRUAL_INTERVAL));
 
   generateEvent('LendingPool deployed');
 }
@@ -139,7 +147,8 @@ export function borrow(argsData: StaticArray<u8>): StaticArray<u8> {
   const tokenId = args.nextU64().unwrap();
   const amount = args.nextU64().unwrap();
 
-  assert(amount >= MIN_BORROW_AMOUNT, "Amount below minimum");
+  const minBorrow = bytesToU64(Storage.get(MIN_BORROW_KEY));
+  assert(amount >= minBorrow, "Amount below minimum");
 
   const caller = Context.caller().toString();
   const vaultAddress = new Address(bytesToString(Storage.get(COLLATERAL_VAULT_KEY)));
@@ -150,6 +159,39 @@ export function borrow(argsData: StaticArray<u8>): StaticArray<u8> {
 
   const ownerResult = Storage.getOf(vaultAddress, stringToBytes('NFT_OWNER_' + tokenId.toString()));
   assert(bytesToString(ownerResult) == caller, "Not NFT owner");
+
+  const valueKey = stringToBytes('NFT_VALUE_' + tokenId.toString());
+  const pdKey = stringToBytes('NFT_PD_' + tokenId.toString());
+  const lgdKey = stringToBytes('NFT_LGD_' + tokenId.toString());
+
+  const collateralValue = bytesToU64(Storage.getOf(vaultAddress, valueKey));
+  const pd = bytesToU64(Storage.getOf(vaultAddress, pdKey));
+  const lgd = bytesToU64(Storage.getOf(vaultAddress, lgdKey));
+
+  let baseLTV: u64 = 7000;
+  if (pd <= 100) {
+    baseLTV = 8000;
+  } else if (pd <= 500) {
+    baseLTV = 7500;
+  } else if (pd <= 1000) {
+    baseLTV = 7000;
+  } else if (pd <= 2000) {
+    baseLTV = 6500;
+  } else {
+    baseLTV = 6000;
+  }
+  if (lgd > 5000) {
+    baseLTV = baseLTV - (baseLTV * (lgd - 5000)) / BASIS_POINTS;
+  }
+  if (baseLTV > 8500) baseLTV = 8500;
+  if (baseLTV < 5000) baseLTV = 5000;
+
+  const maxBorrow = (collateralValue * baseLTV) / BASIS_POINTS;
+  assert(amount <= maxBorrow, "Amount exceeds LTV limit");
+
+  const totalDepositsBefore = bytesToU64(Storage.get(TOTAL_DEPOSITS_KEY));
+  const totalBorrowsBefore = bytesToU64(Storage.get(TOTAL_BORROWS_KEY));
+  assert(totalDepositsBefore >= totalBorrowsBefore + amount, "Insufficient liquidity");
 
   const positionCount = bytesToU64(Storage.get(POSITION_COUNT_KEY));
   const positionId = positionCount + 1;
@@ -206,33 +248,48 @@ export function repay(argsData: StaticArray<u8>): void {
   const accruedInterest = U64.parseInt(parts[3]);
   const totalDebt = borrowedAmount + accruedInterest;
 
-  assert(repayAmount >= totalDebt, "Insufficient repayment");
+  assert(repayAmount > 0, "Invalid repayment amount");
 
-  const tokenId = U64.parseInt(parts[1]);
-
-  Storage.set(positionKey, stringToBytes(parts[0] + ':' + parts[1] + ':0:0:' + parts[4] + ':false'));
-
-  const totalBorrows = bytesToU64(Storage.get(TOTAL_BORROWS_KEY));
-  Storage.set(TOTAL_BORROWS_KEY, u64ToBytes(totalBorrows - borrowedAmount));
-  
-  const activePositions = bytesToString(Storage.get(ACTIVE_POSITIONS_KEY));
-  const positionList = activePositions.split(',');
-  let newActivePositions: string[] = [];
-  
-  for (let i = 0; i < positionList.length; i++) {
-    if (positionList[i] != positionId.toString()) {
-      newActivePositions.push(positionList[i]);
+  if (repayAmount >= totalDebt) {
+    Storage.set(positionKey, stringToBytes(parts[0] + ':' + parts[1] + ':0:0:' + parts[4] + ':false'));
+    const totalBorrows = bytesToU64(Storage.get(TOTAL_BORROWS_KEY));
+    Storage.set(TOTAL_BORROWS_KEY, u64ToBytes(totalBorrows - borrowedAmount));
+    const activePositions = bytesToString(Storage.get(ACTIVE_POSITIONS_KEY));
+    const positionList = activePositions.split(',');
+    let newActivePositions: string[] = [];
+    for (let i = 0; i < positionList.length; i++) {
+      if (positionList[i] != positionId.toString()) {
+        newActivePositions.push(positionList[i]);
+      }
     }
+    const updatedActivePositions = newActivePositions.join(',');
+    Storage.set(ACTIVE_POSITIONS_KEY, stringToBytes(updatedActivePositions));
+    if (repayAmount > totalDebt) {
+      transferCoins(new Address(caller), repayAmount - totalDebt);
+    }
+    generateEvent('Repayment completed');
+    return;
   }
-  
-  const updatedActivePositions = newActivePositions.join(',');
-  Storage.set(ACTIVE_POSITIONS_KEY, stringToBytes(updatedActivePositions));
 
-  if (repayAmount > totalDebt) {
-    transferCoins(new Address(caller), repayAmount - totalDebt);
+  let remaining = repayAmount;
+  let newAccrued = accruedInterest;
+  let newBorrowed = borrowedAmount;
+  if (remaining > 0) {
+    const payInterest = remaining >= newAccrued ? newAccrued : remaining;
+    newAccrued -= payInterest;
+    remaining -= payInterest;
   }
-
-  generateEvent('Repayment completed');
+  if (remaining > 0) {
+    const principalReduction = remaining >= newBorrowed ? newBorrowed : remaining;
+    newBorrowed -= principalReduction;
+    const totalBorrows = bytesToU64(Storage.get(TOTAL_BORROWS_KEY));
+    Storage.set(TOTAL_BORROWS_KEY, u64ToBytes(totalBorrows - principalReduction));
+  }
+  const updatedPositionData = parts[0] + ':' + parts[1] + ':' + newBorrowed.toString() + ':' + newAccrued.toString() + ':' + parts[4] + ':true';
+  Storage.set(positionKey, stringToBytes(updatedPositionData));
+  const lastUpdateKey = stringToBytes(LAST_INTEREST_UPDATE_PREFIX + positionId.toString());
+  Storage.set(lastUpdateKey, u64ToBytes(Context.timestamp()));
+  generateEvent('Repayment partial');
 }
 
 export function accrueInterest(_: StaticArray<u8>): void {
@@ -254,7 +311,7 @@ export function accrueInterest(_: StaticArray<u8>): void {
     const cur_period = Context.currentPeriod();
     const cur_thread = Context.currentThread();
 
-    const accrual_slots = INTEREST_ACCRUAL_INTERVAL;
+    const accrual_slots = bytesToU64(Storage.get(ACCRUAL_SLOTS_KEY));
     const accrual_periods_to_add = accrual_slots / 32;
     const accrual_thread_offset = accrual_slots % 32;
     let next_period = cur_period + accrual_periods_to_add;
@@ -280,7 +337,9 @@ export function accrueInterest(_: StaticArray<u8>): void {
   }
 
   const utilization = totalDeposits > 0 ? (totalBorrows * BASIS_POINTS) / totalDeposits : 0;
-  const interestRate = BASE_INTEREST_RATE + (utilization * INTEREST_RATE_SLOPE) / BASIS_POINTS;
+  const baseRate = bytesToU64(Storage.get(BASE_RATE_KEY));
+  const slope = bytesToU64(Storage.get(RATE_SLOPE_KEY));
+  const interestRate = baseRate + (utilization * slope) / BASIS_POINTS;
 
   Storage.set(CURRENT_INTEREST_RATE_KEY, u64ToBytes(interestRate));
   Storage.set(LAST_ACCRUAL_KEY, u64ToBytes(currentTime));
@@ -327,7 +386,7 @@ export function accrueInterest(_: StaticArray<u8>): void {
   const cur_period = Context.currentPeriod();
   const cur_thread = Context.currentThread();
 
-  const accrual_slots = INTEREST_ACCRUAL_INTERVAL;
+  const accrual_slots = bytesToU64(Storage.get(ACCRUAL_SLOTS_KEY));
   const accrual_periods_to_add = accrual_slots / 32;
   const accrual_thread_offset = accrual_slots % 32;
   let next_period = cur_period + accrual_periods_to_add;
@@ -426,15 +485,12 @@ export function closePositionFromLiquidation(argsData: StaticArray<u8>): void {
   assert(parts[5] == 'true', "Position not active");
 
   const borrowedAmount = U64.parseInt(parts[2]);
+  const received = transferredCoins();
+  assert(received >= repaymentAmount, "Insufficient transferred coins");
 
-  // Mark position as inactive
   Storage.set(positionKey, stringToBytes(parts[0] + ':' + parts[1] + ':0:0:' + parts[4] + ':false'));
-
-  // Update total borrows
   const totalBorrows = bytesToU64(Storage.get(TOTAL_BORROWS_KEY));
   Storage.set(TOTAL_BORROWS_KEY, u64ToBytes(totalBorrows - borrowedAmount));
-
-  // Remove from active positions list
   const activePositions = bytesToString(Storage.get(ACTIVE_POSITIONS_KEY));
   const positionList = activePositions.split(',');
   let newActivePositions: string[] = [];
@@ -445,10 +501,37 @@ export function closePositionFromLiquidation(argsData: StaticArray<u8>): void {
   }
   const updatedActivePositions = newActivePositions.join(',');
   Storage.set(ACTIVE_POSITIONS_KEY, stringToBytes(updatedActivePositions));
-
-  // Add repayment to total deposits (liquidity)
   const totalDeposits = bytesToU64(Storage.get(TOTAL_DEPOSITS_KEY));
-  Storage.set(TOTAL_DEPOSITS_KEY, u64ToBytes(totalDeposits + repaymentAmount));
-
+  Storage.set(TOTAL_DEPOSITS_KEY, u64ToBytes(totalDeposits + received));
   generateEvent('Position closed from liquidation');
+}
+
+export function setInterestParams(argsData: StaticArray<u8>): void {
+  const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == governanceAddress, "Only governance");
+  const args = new Args(argsData);
+  const base = args.nextU64().unwrap();
+  const slope = args.nextU64().unwrap();
+  Storage.set(BASE_RATE_KEY, u64ToBytes(base));
+  Storage.set(RATE_SLOPE_KEY, u64ToBytes(slope));
+  generateEvent('Interest params updated');
+}
+
+export function setMinBorrow(argsData: StaticArray<u8>): void {
+  const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == governanceAddress, "Only governance");
+  const v = bytesToU64(argsData);
+  Storage.set(MIN_BORROW_KEY, u64ToBytes(v));
+  generateEvent('Min borrow updated');
+}
+
+export function setAccrualInterval(argsData: StaticArray<u8>): void {
+  const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == governanceAddress, "Only governance");
+  const v = bytesToU64(argsData);
+  Storage.set(ACCRUAL_SLOTS_KEY, u64ToBytes(v));
+  generateEvent('Accrual interval updated');
 }

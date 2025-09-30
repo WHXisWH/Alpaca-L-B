@@ -1,4 +1,4 @@
-import { generateEvent, Storage, Context, transferCoins, Address, sendMessage } from '@massalabs/massa-as-sdk';
+import { generateEvent, Storage, Context, transferCoins, transferredCoins, Address, sendMessage } from '@massalabs/massa-as-sdk';
 import { stringToBytes, bytesToString, u64ToBytes, bytesToU64, Args } from '@massalabs/as-types';
 import { LIQUIDATION_PENALTY, BASIS_POINTS } from '../utils/Constants';
 
@@ -10,6 +10,7 @@ const LIQUIDATION_COUNT_KEY = stringToBytes('LIQUIDATION_COUNT');
 const LIQUIDATION_PREFIX = 'LIQUIDATION_';
 const AUCTION_PREFIX = 'AUCTION_';
 const ACTIVE_AUCTIONS_KEY = stringToBytes('ACTIVE_AUCTIONS');
+const LIQUIDATION_PENALTY_KEY = stringToBytes('LIQUIDATION_PENALTY');
 
 export function constructor(argsData: StaticArray<u8>): void {
   assert(Context.isDeployingContract(), "Constructor can only be called during deployment");
@@ -24,6 +25,7 @@ export function constructor(argsData: StaticArray<u8>): void {
   Storage.set(COLLATERAL_VAULT_KEY, stringToBytes(vaultAddress));
   Storage.set(LIQUIDATION_COUNT_KEY, u64ToBytes(0));
   Storage.set(ACTIVE_AUCTIONS_KEY, stringToBytes(''));
+  Storage.set(LIQUIDATION_PENALTY_KEY, u64ToBytes(LIQUIDATION_PENALTY));
   generateEvent('LiquidationEngine deployed');
 }
 
@@ -74,8 +76,12 @@ function liquidatePosition(positionId: u64): void {
   const totalDebt = borrowedAmount + accruedInterest;
   const ltvResult = Storage.getOf(riskManagerAddress, stringToBytes('LTV_' + tokenId.toString()));
   const currentLTV = bytesToU64(ltvResult);
-  const liquidationThreshold: u64 = 8800;
-  if (currentLTV <= liquidationThreshold) {
+  let threshold: u64 = 8800;
+  const thresholdKey = stringToBytes('LIQUIDATION_THRESHOLD');
+  if (Storage.hasOf(riskManagerAddress, thresholdKey)) {
+    threshold = bytesToU64(Storage.getOf(riskManagerAddress, thresholdKey));
+  }
+  if (currentLTV <= threshold) {
     return;
   }
   const valueResult = Storage.getOf(vaultAddress, stringToBytes('NFT_VALUE_' + tokenId.toString()));
@@ -93,7 +99,8 @@ function liquidatePosition(positionId: u64): void {
 function startAuction(tokenId: u64, debt: u64, collateralValue: u64): u64 {
   const liquidationCount = bytesToU64(Storage.get(LIQUIDATION_COUNT_KEY));
   const auctionId = liquidationCount;
-  const startingPrice = (debt * (BASIS_POINTS + LIQUIDATION_PENALTY)) / BASIS_POINTS;
+  const penalty = bytesToU64(Storage.get(LIQUIDATION_PENALTY_KEY));
+  const startingPrice = (debt * (BASIS_POINTS + penalty)) / BASIS_POINTS;
   const auctionEndTime = Context.timestamp() + 3600;
   const auctionKey = stringToBytes(AUCTION_PREFIX + auctionId.toString());
   const auctionData = tokenId.toString() + ':' + startingPrice.toString() + ':' + auctionEndTime.toString() + ':0:' + Context.timestamp().toString() + ':true';
@@ -108,7 +115,7 @@ function startAuction(tokenId: u64, debt: u64, collateralValue: u64): u64 {
 export function bid(argsData: StaticArray<u8>): void {
   const args = new Args(argsData);
   const auctionId = args.nextU64().unwrap();
-  const bidAmount = args.nextU64().unwrap();
+  const bidAmount = transferredCoins();
   const caller = Context.caller().toString();
   const auctionKey = stringToBytes(AUCTION_PREFIX + auctionId.toString());
   assert(Storage.has(auctionKey), "Auction not found");
@@ -123,6 +130,9 @@ export function bid(argsData: StaticArray<u8>): void {
   assert(Context.timestamp() < endTime, "Auction expired");
   assert(bidAmount >= startingPrice, "Bid below starting price");
   assert(bidAmount > currentHighestBid, "Bid too low");
+  if (currentHighestBid > 0 && parts.length > 6 && parts[6] != '') {
+    transferCoins(new Address(parts[6]), currentHighestBid);
+  }
   const newAuctionData = parts[0] + ':' + parts[1] + ':' + parts[2] + ':' + bidAmount.toString() + ':' + parts[4] + ':' + parts[5] + ':' + caller;
   Storage.set(auctionKey, stringToBytes(newAuctionData));
   generateEvent('Bid placed');
@@ -164,7 +174,7 @@ export function finalizeAuction(argsData: StaticArray<u8>): void {
         const closePositionArgs = new Args();
         closePositionArgs.add(positionId);
         closePositionArgs.add(repaymentToPool);
-        sendMessage(lendingPoolAddress, 'closePositionFromLiquidation', 0, 0, 0, 0, 100_000_000, 0, 0, closePositionArgs.serialize());
+        sendMessage(lendingPoolAddress, 'closePositionFromLiquidation', 0, 0, 0, 0, 100_000_000, repaymentToPool, 0, closePositionArgs.serialize());
 
         // Transfer NFT ownership
         const transferOwnershipArgs = new Args();
@@ -217,6 +227,15 @@ export function getAuction(argsData: StaticArray<u8>): StaticArray<u8> {
 
 export function getActiveAuctions(_: StaticArray<u8>): StaticArray<u8> {
   return Storage.get(ACTIVE_AUCTIONS_KEY);
+}
+
+export function setLiquidationPenalty(argsData: StaticArray<u8>): void {
+  const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == governanceAddress, "Only governance can set penalty");
+  const v = bytesToU64(argsData);
+  Storage.set(LIQUIDATION_PENALTY_KEY, u64ToBytes(v));
+  generateEvent('Liquidation penalty updated');
 }
 
 export function getLiquidation(argsData: StaticArray<u8>): StaticArray<u8> {

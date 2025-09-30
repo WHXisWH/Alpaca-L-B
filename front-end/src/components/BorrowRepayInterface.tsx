@@ -125,9 +125,9 @@ export default function BorrowRepayInterface({ positions, provider, addresses, o
           const parts = e.split(':');
           if (parts.length < 4) continue;
           const tokenId = parseInt(parts[0]);
-          const value = parts[1];
-          const pd = parts[2];
-          const lgd = parts[3];
+          let value = parts[1];
+          let pd = parts[2];
+          let lgd = parts[3];
 
           // asset type
           let assetType = 'unknown';
@@ -148,6 +148,24 @@ export default function BorrowRepayInterface({ positions, provider, addresses, o
               isDeposited = new TextDecoder().decode(dRes.value || new Uint8Array()) === 'true';
             } catch {}
           }
+
+          try {
+            if (isDeposited && contracts.collateralVault) {
+              const vRes = await retryContractCall(() => contracts.collateralVault!.read('getNFTValue', new massa.Args().addU64(BigInt(tokenId)).serialize()));
+              const pdRes = await retryContractCall(() => contracts.collateralVault!.read('getNFTPD', new massa.Args().addU64(BigInt(tokenId)).serialize()));
+              const lgdRes = await retryContractCall(() => contracts.collateralVault!.read('getNFTLGD', new massa.Args().addU64(BigInt(tokenId)).serialize()));
+              value = new massa.Args(vRes.value).nextU64().toString();
+              pd = new massa.Args(pdRes.value).nextU64().toString();
+              lgd = new massa.Args(lgdRes.value).nextU64().toString();
+            } else if (contracts.oracle) {
+              const vRes = await retryContractCall(() => contracts.oracle!.read('getNFTValuation', new massa.Args().addU64(BigInt(tokenId)).serialize()));
+              const pdRes = await retryContractCall(() => contracts.oracle!.read('getNFTPD', new massa.Args().addU64(BigInt(tokenId)).serialize()));
+              const lgdRes = await retryContractCall(() => contracts.oracle!.read('getNFTLGD', new massa.Args().addU64(BigInt(tokenId)).serialize()));
+              value = new massa.Args(vRes.value).nextU64().toString();
+              pd = new massa.Args(pdRes.value).nextU64().toString();
+              lgd = new massa.Args(lgdRes.value).nextU64().toString();
+            }
+          } catch {}
 
           nfts.push({
             id: tokenId,

@@ -16,6 +16,7 @@ const AUTHORIZED_PROVIDERS_KEY = stringToBytes('AUTH_PROVIDERS');
 // Autonomous update functionality
 const UPDATE_ACTIVE_KEY = stringToBytes('UPDATE_ACTIVE');
 const PRICED_NFT_LIST_KEY = stringToBytes('PRICED_NFT_LIST');
+const DEMO_VOL_BPS_KEY = stringToBytes('DEMO_VOL_BPS');
 
 export function constructor(argsData: StaticArray<u8>): void {
   assert(Context.isDeployingContract(), "Constructor can only be called during deployment");
@@ -31,6 +32,7 @@ export function constructor(argsData: StaticArray<u8>): void {
   Storage.set(AUTHORIZED_PROVIDERS_KEY, stringToBytes(governanceAddress));
   Storage.set(UPDATE_ACTIVE_KEY, stringToBytes('false'));
   Storage.set(PRICED_NFT_LIST_KEY, stringToBytes(''));
+  Storage.set(DEMO_VOL_BPS_KEY, u64ToBytes(200));
   
   generateEvent('Oracle deployed');
 }
@@ -113,6 +115,42 @@ export function setInitialNFTProfile(argsData: StaticArray<u8>): void {
   generateEvent('Initial profile set for NFT ' + tokenIdStr);
 }
 
+export function updateNFTProfile(argsData: StaticArray<u8>): void {
+  const args = new Args(argsData);
+  const tokenId = args.nextU64().expect('Invalid token ID');
+  const value = args.nextU64().expect('Invalid valuation');
+  const pd = args.nextU64().expect('Invalid PD');
+  const lgd = args.nextU64().expect('Invalid LGD');
+
+  const caller = Context.caller().toString();
+  const authorizedProviders = bytesToString(Storage.get(AUTHORIZED_PROVIDERS_KEY));
+  const rwaNftAddress = bytesToString(Storage.get(RWA_NFT_KEY));
+  assert(authorizedProviders.includes(caller) || caller == rwaNftAddress, 'Not authorized to update NFT profile');
+
+  assert(value > 0, 'Valuation must be greater than 0');
+  assert(pd <= 10000, 'PD must be <= 10000 basis points');
+  assert(lgd <= 10000, 'LGD must be <= 10000 basis points');
+
+  const tokenIdStr = tokenId.toString();
+  const valuationKey = stringToBytes(NFT_VALUATION_PREFIX + tokenIdStr);
+  const pdKey = stringToBytes(NFT_PD_PREFIX + tokenIdStr);
+  const lgdKey = stringToBytes(NFT_LGD_PREFIX + tokenIdStr);
+  const updateKey = stringToBytes(NFT_LAST_UPDATE_PREFIX + tokenIdStr);
+
+  Storage.set(valuationKey, u64ToBytes(value));
+  Storage.set(pdKey, u64ToBytes(pd));
+  Storage.set(lgdKey, u64ToBytes(lgd));
+  Storage.set(updateKey, u64ToBytes(Context.timestamp()));
+
+  const pricedNFTsData = bytesToString(Storage.get(PRICED_NFT_LIST_KEY));
+  if (!pricedNFTsData.split(',').includes(tokenIdStr)) {
+    const newNFTList = pricedNFTsData == '' ? tokenIdStr : pricedNFTsData + ',' + tokenIdStr;
+    Storage.set(PRICED_NFT_LIST_KEY, stringToBytes(newNFTList));
+  }
+
+  generateEvent('NFT profile updated for ' + tokenIdStr);
+}
+
 // ==================================================
 // =========== AUTONOMOUS UPDATE LOGIC ==============
 // ==================================================
@@ -143,59 +181,56 @@ export function autonomousUpdate(_: StaticArray<u8>): void {
   if (bytesToString(Storage.get(UPDATE_ACTIVE_KEY)) != 'true') {
     return;
   }
-
   const pricedNFTsData = bytesToString(Storage.get(PRICED_NFT_LIST_KEY));
   if (pricedNFTsData == '') {
     rescheduleNextUpdate();
     return;
   }
-  
   const pricedNFTs = pricedNFTsData.split(',');
   const vaultAddress = new Address(bytesToString(Storage.get(COLLATERAL_VAULT_KEY)));
-
+  const vol = bytesToU64(Storage.get(DEMO_VOL_BPS_KEY));
+  let updatedCount: u64 = 0;
   for (let i = 0; i < pricedNFTs.length; i++) {
     const tokenIdStr = pricedNFTs[i];
     if (tokenIdStr == '') continue;
-    
     const tokenId = U64.parseInt(tokenIdStr);
-    
     const valueKey = stringToBytes(NFT_VALUATION_PREFIX + tokenIdStr);
     const pdKey = stringToBytes(NFT_PD_PREFIX + tokenIdStr);
     const lgdKey = stringToBytes(NFT_LGD_PREFIX + tokenIdStr);
-
-    let currentValue = bytesToU64(Storage.get(valueKey));
-    let currentPD = bytesToU64(Storage.get(pdKey));
-    let currentLGD = bytesToU64(Storage.get(lgdKey));
-
-    const randomSeed = Context.timestamp() + tokenId;
-    
-    const valueChange = (randomSeed % 400) - 200;
-    let newValue = currentValue + (currentValue * valueChange) / 10000;
+    let currentValue: u64 = 0;
+    let currentPD: u64 = 500;
+    let currentLGD: u64 = 5000;
+    if (Storage.has(valueKey)) currentValue = bytesToU64(Storage.get(valueKey));
+    if (Storage.has(pdKey)) currentPD = bytesToU64(Storage.get(pdKey));
+    if (Storage.has(lgdKey)) currentLGD = bytesToU64(Storage.get(lgdKey));
+    if (currentValue == 0) continue;
+    const seed = Context.timestamp() + tokenId;
+    const sign = seed % 2 == 0 ? 1 : -1;
+    const mag = u64((seed % (vol + 1)));
+    let newValue: u64 = currentValue;
+    if (sign > 0) {
+      newValue = currentValue + (currentValue * mag) / 10000;
+    } else {
+      newValue = currentValue - (currentValue * mag) / 10000;
+    }
     if (newValue < 1000) newValue = 1000;
-
-    const pdChange = (randomSeed % 1000) - 500;
-    let newPD = currentPD + (currentPD * pdChange) / 10000;
-    if (newPD < 50) newPD = 50;
-    if (newPD > 9000) newPD = 9000;
-
-    const lgdChange = (randomSeed % 200) - 100;
-    let newLGD = currentLGD + (currentLGD * lgdChange) / 10000;
-    if (newLGD < 1000) newLGD = 1000;
-    if (newLGD > 9500) newLGD = 9500;
-
     Storage.set(valueKey, u64ToBytes(newValue));
-    Storage.set(pdKey, u64ToBytes(newPD));
-    Storage.set(lgdKey, u64ToBytes(newLGD));
     Storage.set(stringToBytes(NFT_LAST_UPDATE_PREFIX + tokenIdStr), u64ToBytes(Context.timestamp()));
-
     const period = Context.currentPeriod();
     const thread = Context.currentThread();
     sendMessage(vaultAddress, 'refreshNFTData', period, thread, period + 5, thread, 200_000_000, 0, 0, u64ToBytes(tokenId));
+    updatedCount += 1;
   }
-
-  generateEvent('Oracle autonomously updated ' + pricedNFTs.length.toString() + ' NFTs.');
-
+  generateEvent('Oracle demo update ' + updatedCount.toString() + ' NFTs');
   rescheduleNextUpdate();
+}
+
+export function setDemoVolatility(argsData: StaticArray<u8>): void {
+  const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
+  assert(Context.caller().toString() == governanceAddress, 'Only governance');
+  const v = bytesToU64(argsData);
+  Storage.set(DEMO_VOL_BPS_KEY, u64ToBytes(v));
+  generateEvent('Oracle demo volatility updated');
 }
 
 function rescheduleNextUpdate(): void {

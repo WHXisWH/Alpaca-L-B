@@ -173,14 +173,16 @@ export default function LiquidationPanel({ provider, addresses }: LiquidationPan
     setError('');
 
     try {
-      const bidAmountNano = BigInt(Math.floor(parseFloat(bidAmount) * 1_000_000));
-      
       const operation = await contracts.liquidationEngine.call(
         'bid',
         new massa.Args()
           .addU64(BigInt(selectedAuction))
-          .addU64(bidAmountNano)
-          .serialize()
+          .serialize(),
+        {
+          maxGas: BigInt(200_000_000),
+          fee: massa.Mas.fromString('0.01'),
+          coins: massa.Mas.fromString(bidAmount)
+        }
       );
 
       await operation.waitFinalExecution();

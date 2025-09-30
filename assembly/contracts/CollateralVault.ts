@@ -11,6 +11,7 @@ const NFT_PD_PREFIX = 'NFT_PD_';
 const NFT_LGD_PREFIX = 'NFT_LGD_';
 const SHARE_TOKEN_PREFIX = 'SHARE_';
 const TOTAL_SHARES_KEY = stringToBytes('TOTAL_SHARES');
+const LIQUIDATION_ENGINE_KEY = stringToBytes('LIQUIDATION_ENGINE');
 
 export function constructor(argsData: StaticArray<u8>): void {
   assert(Context.isDeployingContract(), "Constructor can only be called during deployment");
@@ -229,6 +230,15 @@ export function setOracleContract(argsData: StaticArray<u8>): void {
   Storage.set(ORACLE_CONTRACT_KEY, stringToBytes(oracleAddress));
   
   generateEvent('Oracle contract address updated');
+}
+
+export function setLiquidationEngine(argsData: StaticArray<u8>): void {
+  const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == governanceAddress, "Only governance can set liquidation engine");
+  const engine = bytesToString(argsData);
+  Storage.set(LIQUIDATION_ENGINE_KEY, stringToBytes(engine));
+  generateEvent('Liquidation engine address updated in Vault');
 }
 
 export function refreshNFTData(argsData: StaticArray<u8>): void {

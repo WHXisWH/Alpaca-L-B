@@ -283,3 +283,183 @@ export function startRiskManagerEvaluation(_: StaticArray<u8>): void {
   sendMessage(new Address(riskManagerAddress), 'startEvaluation', next_period, next_thread, next_period + 5, next_thread, 200_000_000, 0, 0, []);
   generateEvent('Risk manager evaluation start triggered');
 }
+
+export function stopLendingPoolAccrual(_: StaticArray<u8>): void {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can stop lending pool accrual");
+  const lendingPoolAddress = bytesToString(Storage.get(LENDING_POOL_KEY));
+  assert(lendingPoolAddress != '', "Lending pool not set");
+  const cur_period = Context.currentPeriod();
+  const cur_thread = Context.currentThread();
+  let next_thread: u8 = cur_thread + 1;
+  let next_period = cur_period;
+  if (next_thread >= 32) {
+    ++next_period;
+    next_thread = 0;
+  }
+  sendMessage(new Address(lendingPoolAddress), 'stopAccrual', next_period, next_thread, next_period + 5, next_thread, 200_000_000, 0, 0, []);
+  generateEvent('Lending pool accrual stop triggered');
+}
+
+export function stopRiskManagerEvaluation(_: StaticArray<u8>): void {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can stop risk manager evaluation");
+  const riskManagerAddress = bytesToString(Storage.get(RISK_MANAGER_KEY));
+  assert(riskManagerAddress != '', "Risk manager not set");
+  const cur_period = Context.currentPeriod();
+  const cur_thread = Context.currentThread();
+  let next_thread: u8 = cur_thread + 1;
+  let next_period = cur_period;
+  if (next_thread >= 32) {
+    ++next_period;
+    next_thread = 0;
+  }
+  sendMessage(new Address(riskManagerAddress), 'stopEvaluation', next_period, next_thread, next_period + 5, next_thread, 200_000_000, 0, 0, []);
+  generateEvent('Risk manager evaluation stop triggered');
+}
+
+export function setLiquidationEngineInVault(argsData: StaticArray<u8>): void {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can call this");
+  const vaultAddress = bytesToString(Storage.get(COLLATERAL_VAULT_KEY));
+  assert(vaultAddress != '', 'Collateral vault not set');
+  const cur_period = Context.currentPeriod();
+  const cur_thread = Context.currentThread();
+  let next_thread: u8 = cur_thread + 1;
+  let next_period = cur_period;
+  if (next_thread >= 32) {
+    ++next_period;
+    next_thread = 0;
+  }
+  sendMessage(new Address(vaultAddress), 'setLiquidationEngine', next_period, next_thread, next_period + 5, next_thread, 200_000_000, 0, 0, argsData);
+  generateEvent('setLiquidationEngineInVault called');
+}
+
+export function setLendingPoolInterestParams(argsData: StaticArray<u8>): void {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can call this");
+  const poolAddress = bytesToString(Storage.get(LENDING_POOL_KEY));
+  assert(poolAddress != '', 'Lending pool not set');
+  const cur_period = Context.currentPeriod();
+  const cur_thread = Context.currentThread();
+  let next_thread: u8 = cur_thread + 1;
+  let next_period = cur_period;
+  if (next_thread >= 32) {
+    ++next_period;
+    next_thread = 0;
+  }
+  sendMessage(new Address(poolAddress), 'setInterestParams', next_period, next_thread, next_period + 5, next_thread, 200_000_000, 0, 0, argsData);
+  generateEvent('setLendingPoolInterestParams called');
+}
+
+export function setLendingPoolMinBorrow(argsData: StaticArray<u8>): void {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can call this");
+  const poolAddress = bytesToString(Storage.get(LENDING_POOL_KEY));
+  assert(poolAddress != '', 'Lending pool not set');
+  const cur_period = Context.currentPeriod();
+  const cur_thread = Context.currentThread();
+  let next_thread: u8 = cur_thread + 1;
+  let next_period = cur_period;
+  if (next_thread >= 32) {
+    ++next_period;
+    next_thread = 0;
+  }
+  sendMessage(new Address(poolAddress), 'setMinBorrow', next_period, next_thread, next_period + 5, next_thread, 200_000_000, 0, 0, argsData);
+  generateEvent('setLendingPoolMinBorrow called');
+}
+
+export function setLendingPoolAccrualInterval(argsData: StaticArray<u8>): void {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can call this");
+  const poolAddress = bytesToString(Storage.get(LENDING_POOL_KEY));
+  assert(poolAddress != '', 'Lending pool not set');
+  const cur_period = Context.currentPeriod();
+  const cur_thread = Context.currentThread();
+  let next_thread: u8 = cur_thread + 1;
+  let next_period = cur_period;
+  if (next_thread >= 32) {
+    ++next_period;
+    next_thread = 0;
+  }
+  sendMessage(new Address(poolAddress), 'setAccrualInterval', next_period, next_thread, next_period + 5, next_thread, 200_000_000, 0, 0, argsData);
+  generateEvent('setLendingPoolAccrualInterval called');
+}
+
+export function setRiskManagerLiquidationThreshold(argsData: StaticArray<u8>): void {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can call this");
+  const riskManagerAddress = bytesToString(Storage.get(RISK_MANAGER_KEY));
+  assert(riskManagerAddress != '', 'Risk manager not set');
+  const cur_period = Context.currentPeriod();
+  const cur_thread = Context.currentThread();
+  let next_thread: u8 = cur_thread + 1;
+  let next_period = cur_period;
+  if (next_thread >= 32) {
+    ++next_period;
+    next_thread = 0;
+  }
+  sendMessage(new Address(riskManagerAddress), 'setLiquidationThreshold', next_period, next_thread, next_period + 5, next_thread, 200_000_000, 0, 0, argsData);
+  generateEvent('setRiskManagerLiquidationThreshold called');
+}
+
+export function setRiskManagerEvaluationInterval(argsData: StaticArray<u8>): void {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can call this");
+  const riskManagerAddress = bytesToString(Storage.get(RISK_MANAGER_KEY));
+  assert(riskManagerAddress != '', 'Risk manager not set');
+  const cur_period = Context.currentPeriod();
+  const cur_thread = Context.currentThread();
+  let next_thread: u8 = cur_thread + 1;
+  let next_period = cur_period;
+  if (next_thread >= 32) {
+    ++next_period;
+    next_thread = 0;
+  }
+  sendMessage(new Address(riskManagerAddress), 'setEvaluationInterval', next_period, next_thread, next_period + 5, next_thread, 200_000_000, 0, 0, argsData);
+  generateEvent('setRiskManagerEvaluationInterval called');
+}
+
+export function setRiskManagerOracleStalenessWindow(argsData: StaticArray<u8>): void {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can call this");
+  const riskManagerAddress = bytesToString(Storage.get(RISK_MANAGER_KEY));
+  assert(riskManagerAddress != '', 'Risk manager not set');
+  const cur_period = Context.currentPeriod();
+  const cur_thread = Context.currentThread();
+  let next_thread: u8 = cur_thread + 1;
+  let next_period = cur_period;
+  if (next_thread >= 32) {
+    ++next_period;
+    next_thread = 0;
+  }
+  sendMessage(new Address(riskManagerAddress), 'setOracleStalenessWindow', next_period, next_thread, next_period + 5, next_thread, 200_000_000, 0, 0, argsData);
+  generateEvent('setRiskManagerOracleStalenessWindow called');
+}
+
+export function setLiquidationPenaltyInEngine(argsData: StaticArray<u8>): void {
+  const owner = bytesToString(Storage.get(OWNER_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == owner, "Only owner can call this");
+  const engineAddress = bytesToString(Storage.get(LIQUIDATION_ENGINE_KEY));
+  assert(engineAddress != '', 'Liquidation engine not set');
+  const cur_period = Context.currentPeriod();
+  const cur_thread = Context.currentThread();
+  let next_thread: u8 = cur_thread + 1;
+  let next_period = cur_period;
+  if (next_thread >= 32) {
+    ++next_period;
+    next_thread = 0;
+  }
+  sendMessage(new Address(engineAddress), 'setLiquidationPenalty', next_period, next_thread, next_period + 5, next_thread, 200_000_000, 0, 0, argsData);
+  generateEvent('setLiquidationPenaltyInEngine called');
+}

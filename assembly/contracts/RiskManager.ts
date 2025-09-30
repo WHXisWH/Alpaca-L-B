@@ -1,6 +1,6 @@
 import { generateEvent, Storage, Context, sendMessage, Address } from '@massalabs/massa-as-sdk';
 import { stringToBytes, bytesToString, u64ToBytes, bytesToU64, Args } from '@massalabs/as-types';
-import { RISK_EVALUATION_INTERVAL, DEFAULT_LTV, MAX_LTV, MIN_LTV, BASIS_POINTS } from '../utils/Constants';
+import { RISK_EVALUATION_INTERVAL, DEFAULT_LTV, MAX_LTV, MIN_LTV, BASIS_POINTS, DEFAULT_ORACLE_STALENESS } from '../utils/Constants';
 
 const GOVERNANCE_KEY = stringToBytes('GOVERNANCE');
 const ORACLE_KEY = stringToBytes('ORACLE');
@@ -10,6 +10,9 @@ const LENDING_POOL_KEY = stringToBytes('LENDING_POOL');
 const POSITION_LTV_PREFIX = 'LTV_';
 const HIGH_RISK_POSITIONS_KEY = stringToBytes('HIGH_RISK_POSITIONS');
 const EVALUATION_ACTIVE_KEY = stringToBytes('EVALUATION_ACTIVE');
+const LIQUIDATION_THRESHOLD_KEY = stringToBytes('LIQUIDATION_THRESHOLD');
+const EVALUATION_INTERVAL_KEY = stringToBytes('EVALUATION_INTERVAL');
+const ORACLE_STALENESS_WINDOW_KEY = stringToBytes('ORACLE_STALENESS_WINDOW');
 
 export function constructor(argsData: StaticArray<u8>): void {
   assert(Context.isDeployingContract(), "Constructor can only be called during deployment");
@@ -24,6 +27,9 @@ export function constructor(argsData: StaticArray<u8>): void {
   Storage.set(COLLATERAL_VAULT_KEY, stringToBytes(vaultAddress));
   Storage.set(EVALUATION_ACTIVE_KEY, stringToBytes('false'));
   Storage.set(HIGH_RISK_POSITIONS_KEY, stringToBytes(''));
+  Storage.set(LIQUIDATION_THRESHOLD_KEY, u64ToBytes(8500));
+  Storage.set(EVALUATION_INTERVAL_KEY, u64ToBytes(RISK_EVALUATION_INTERVAL));
+  Storage.set(ORACLE_STALENESS_WINDOW_KEY, u64ToBytes(DEFAULT_ORACLE_STALENESS));
 
   generateEvent('RiskManager deployed');
 }
@@ -96,6 +102,8 @@ export function evaluate(_: StaticArray<u8>): void {
 
   const lendingPoolAddress = new Address(bytesToString(Storage.get(LENDING_POOL_KEY)));
   const vaultAddress = new Address(bytesToString(Storage.get(COLLATERAL_VAULT_KEY)));
+  const oracleAddress = new Address(bytesToString(Storage.get(ORACLE_KEY)));
+  const stalenessWindow = bytesToU64(Storage.get(ORACLE_STALENESS_WINDOW_KEY));
 
   let highRiskPositionsList: string[] = [];
 
@@ -124,10 +132,19 @@ export function evaluate(_: StaticArray<u8>): void {
             const valueKey = stringToBytes('NFT_VALUE_' + tokenId.toString());
             if (Storage.hasOf(vaultAddress, valueKey)) {
               const collateralValue = bytesToU64(Storage.getOf(vaultAddress, valueKey));
-
+              const lastUpdateKey = stringToBytes('NFT_UPDATE_' + tokenId.toString());
+              let isStale = true;
+              if (Storage.hasOf(oracleAddress, lastUpdateKey)) {
+                const lastUpdate = bytesToU64(Storage.getOf(oracleAddress, lastUpdateKey));
+                const now = Context.timestamp();
+                isStale = now - lastUpdate > stalenessWindow;
+              }
+              if (isStale) {
+                continue;
+              }
               if (collateralValue > 0) {
                 const currentLTV = (totalDebt * BASIS_POINTS) / collateralValue;
-                const liquidationThreshold: u64 = 8500;
+                const liquidationThreshold = bytesToU64(Storage.get(LIQUIDATION_THRESHOLD_KEY));
                 if (currentLTV > liquidationThreshold) {
                   highRiskPositionsList.push(positionId);
                 }
@@ -167,7 +184,7 @@ export function evaluate(_: StaticArray<u8>): void {
     );
   }
 
-  const eval_slots = RISK_EVALUATION_INTERVAL;
+  const eval_slots = bytesToU64(Storage.get(EVALUATION_INTERVAL_KEY));
   const eval_periods_to_add = eval_slots / 32;
   const eval_thread_offset = eval_slots % 32;
 
@@ -201,10 +218,21 @@ export function calculateLTV(argsData: StaticArray<u8>): StaticArray<u8> {
   const borrowAmount = args.nextU64().unwrap();
   
   const vaultAddress = new Address(bytesToString(Storage.get(COLLATERAL_VAULT_KEY)));
+  const oracleAddress = new Address(bytesToString(Storage.get(ORACLE_KEY)));
+  const stalenessWindow = bytesToU64(Storage.get(ORACLE_STALENESS_WINDOW_KEY));
   
   const valueResult = Storage.getOf(vaultAddress, stringToBytes('NFT_VALUE_' + tokenId.toString()));
   const pdResult = Storage.getOf(vaultAddress, stringToBytes('NFT_PD_' + tokenId.toString()));
   const lgdResult = Storage.getOf(vaultAddress, stringToBytes('NFT_LGD_' + tokenId.toString()));
+  const lastUpdateKey = stringToBytes('NFT_UPDATE_' + tokenId.toString());
+  if (!Storage.hasOf(oracleAddress, lastUpdateKey)) {
+    return u64ToBytes(0);
+  }
+  const lastUpdate = bytesToU64(Storage.getOf(oracleAddress, lastUpdateKey));
+  const now = Context.timestamp();
+  if (now - lastUpdate > stalenessWindow) {
+    return u64ToBytes(0);
+  }
   
   const collateralValue = bytesToU64(valueResult);
   const pd = bytesToU64(pdResult);
@@ -307,5 +335,32 @@ export function getLendingPool(_: StaticArray<u8>): StaticArray<u8> {
     if (!Storage.has(LENDING_POOL_KEY)) {
         return stringToBytes('');
     }
-    return Storage.get(LENDING_POOL_KEY);
+  return Storage.get(LENDING_POOL_KEY);
+}
+
+export function setLiquidationThreshold(argsData: StaticArray<u8>): void {
+  const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == governanceAddress, 'Only governance');
+  const v = bytesToU64(argsData);
+  Storage.set(LIQUIDATION_THRESHOLD_KEY, u64ToBytes(v));
+  generateEvent('Liquidation threshold updated');
+}
+
+export function setEvaluationInterval(argsData: StaticArray<u8>): void {
+  const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == governanceAddress, 'Only governance');
+  const v = bytesToU64(argsData);
+  Storage.set(EVALUATION_INTERVAL_KEY, u64ToBytes(v));
+  generateEvent('Evaluation interval updated');
+}
+
+export function setOracleStalenessWindow(argsData: StaticArray<u8>): void {
+  const governanceAddress = bytesToString(Storage.get(GOVERNANCE_KEY));
+  const caller = Context.caller().toString();
+  assert(caller == governanceAddress, 'Only governance');
+  const v = bytesToU64(argsData);
+  Storage.set(ORACLE_STALENESS_WINDOW_KEY, u64ToBytes(v));
+  generateEvent('Oracle staleness window updated');
 }

@@ -1,9 +1,9 @@
 {
-  "governance": "AS123itkCSSQ3rWWVB1fxwQkSz18Uz68Gfus2SSzE4G72NgV1ujDd",
-  "oracle": "AS125CuWiSgP5RJxpqwQrpPSD8B1kWjjgrsa8vJYyk628N2PH3JVM",
-  "rwaNFT": "AS1YYQNcraHcbKXEkSmN5wv3eC8QHEuyXQ6NSpWp7oARG5SAe9Sk",
-  "collateralVault": "AS12D19EkfR1jLNuwpmuJfyeA1FEUeF89QTUyiFjrgXJsFGnSb7mS",
-  "riskManager": "AS1eUF8KZPAyUcoEG8ik8853kV2sb7FUCGQaw8EV68ZrJNwzPnvY",
-  "lendingPool": "AS1qp2hc9XiYRSzwtoWah9t5jarYi4M5uXykJTXwZarrFYh1JHnk",
-  "liquidationEngine": "AS1S5GLuGRujgCcym3YENS3MuGgem8A54zJxtif7KbQYN7DW5cB3"
+  "governance": "AS12p9hDUm3Y5b7TzSZHoYonMYEUojohTAwoPQsB1LJfK9mAWkMK9",
+  "oracle": "AS121cagQHx7FnWTfenDTkL2PsKQdukA7HL9LL7PRqrinw7ge5exv",
+  "rwaNFT": "AS1kA2GmWjuYmcHvnrGqMjKh63GNWoh54zNTKrcZb8afxwrakR5y",
+  "collateralVault": "AS12mKQTzyRKuKvjeBZZqnE9XRvD7BDtE9Ff4Voo8nmuYqeV5eXfT",
+  "riskManager": "AS12wEWtwFphaDYQqYX9jqXPTtXmbVJVnen8N8nR69VH83iBYFtAG",
+  "lendingPool": "AS12XUQnaKJjYsT9Yciq4AKyFRDhfphhaANBJb3B2wkaFu5sLPNKP",
+  "liquidationEngine": "AS12ZDTyAYryCizbYPQkcmShjpMVhQRDgDuQUrh2ZbrXJWTu946rf"
 }

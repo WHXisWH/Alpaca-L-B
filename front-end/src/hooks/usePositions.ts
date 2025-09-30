@@ -466,9 +466,22 @@ export function usePositions(provider: any, addresses: Record<string, string>) {
     // Refresh data to ensure borrow conditions are met
     await refreshData();
 
-    // Step 2: Borrow if amount is greater than 0
     if (amount && parseFloat(amount) > 0) {
         const borrowAmount = BigInt(Math.floor(parseFloat(amount) * 1_000_000_000));
+        if (contracts.riskManager) {
+          try {
+            const ltvRes = await contracts.riskManager.read(
+              'calculateLTV',
+              new massa.Args().addU64(BigInt(tokenId)).addU64(borrowAmount).serialize()
+            );
+            const ltv = new massa.Args(ltvRes.value).nextU64();
+            if (ltv === 0n || ltv === 10000n) {
+              throw new Error('Borrow exceeds allowed LTV or price is stale');
+            }
+          } catch (e) {
+            throw e;
+          }
+        }
         const borrowOp = await contracts.lendingPool.call(
           'borrow',
           new massa.Args()

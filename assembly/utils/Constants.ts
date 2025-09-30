@@ -9,3 +9,4 @@ export const DEFAULT_LTV: u64 = 7000;
 export const MAX_LTV: u64 = 8500;
 export const MIN_LTV: u64 = 5000;
 export const LIQUIDATION_PENALTY: u64 = 500;
+export const DEFAULT_ORACLE_STALENESS: u64 = 86400;
